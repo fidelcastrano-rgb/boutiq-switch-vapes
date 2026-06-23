@@ -9,19 +9,22 @@ import Image from 'next/image';
 
 export function MiniCart() {
   const [isOpen, setIsOpen] = useState(false);
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      return [...cartStore.getItems()];
+    }
+    return [];
+  });
   const [mounted, setMounted] = useState(false);
   const [pulse, setPulse] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setItems([...cartStore.getItems()]);
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
 
     const unsubscribe = cartStore.subscribe(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setItems([...cartStore.getItems()]);
     });
 
