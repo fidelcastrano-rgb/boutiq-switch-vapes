@@ -1,5 +1,3 @@
-import { createClient } from '@libsql/client';
-
 // Types for Cloudflare D1 bindings in production env
 interface D1Database {
   prepare: (sql: string) => D1PreparedStatement;
@@ -12,15 +10,29 @@ interface D1PreparedStatement {
   run: () => Promise<{ success: boolean; results?: any[] }>;
 }
 
-let localDb: ReturnType<typeof createClient> | null = null;
+let localDb: any = null;
 let initialized = false;
 
 // Helper to get local database and initialize with schema if it is brand new
 async function getLocalDb() {
   if (!localDb) {
-    localDb = createClient({
-      url: "file:/tmp/libsql.db"
-    });
+    let createClient;
+    try {
+      const libsql = await import('@libsql/client').catch(() => null);
+      if (libsql) {
+        createClient = libsql.createClient;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    if (createClient) {
+      localDb = createClient({
+        url: "file:/tmp/libsql.db"
+      });
+    } else {
+      console.warn("Local DB not available.");
+    }
   }
 
   if (!initialized) {
