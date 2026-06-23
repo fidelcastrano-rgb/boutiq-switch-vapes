@@ -196,8 +196,9 @@ export async function deliverAllCheckoutAutomation(order: any, db?: any) {
 
   if (resend) {
     try {
+      const senderEmail = process.env.RESEND_FROM_EMAIL || 'Boutiq Switch Vapes <orders@boutiqswitchvapes.us>';
       const data = await resend.emails.send({
-        from: 'Boutiq Switch Vapes <onboarding@resend.dev>',
+        from: senderEmail,
         to: [order.customer_email],
         subject: `Payment Instructions for Order #${shortId}`,
         html: customerEmailHtml,
@@ -285,9 +286,11 @@ export async function deliverAllCheckoutAutomation(order: any, db?: any) {
 
   if (resend) {
     try {
+      const senderEmail = process.env.RESEND_FROM_EMAIL || 'Boutiq Switch Vapes <orders@boutiqswitchvapes.us>';
+      const adminEmail = process.env.ADMIN_EMAIL || 'sales@boutiqswitchvapes.us';
       await resend.emails.send({
-        from: 'Boutiq Switch Vapes Admin <onboarding@resend.dev>',
-        to: ['yamahaoutboardss@gmail.com'], // Deliver to owner address as requested
+        from: senderEmail,
+        to: [adminEmail],
         subject: `[NEW BOOKING ALERT] Order #${shortId} placed by ${order.customer_name}`,
         html: adminEmailHtml,
       });

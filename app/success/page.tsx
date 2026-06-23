@@ -334,7 +334,7 @@ function SuccessContent() {
             <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-4.5 space-y-3.5 text-xs text-left">
               
               <div className="border-b border-[#27272a] pb-3 space-y-1.5 text-gray-500 text-[10px] font-mono">
-                <p><span className="text-gray-400 font-sans font-bold">To:</span> {activeTab === 'admin' ? 'yamahaoutboardss@gmail.com' : order.customer_email}</p>
+                <p><span className="text-gray-400 font-sans font-bold">To:</span> {activeTab === 'admin' ? 'sales@boutiqswitchvapes.us' : order.customer_email}</p>
                 
                 {activeTab === 'instructions' && (
                   <p><span className="text-gray-400 font-sans font-bold">Subject:</span> <span className="text-white font-mono">Payment Instructions for Order #{shortId}</span></p>

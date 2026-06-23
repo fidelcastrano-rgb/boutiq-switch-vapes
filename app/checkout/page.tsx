@@ -64,7 +64,7 @@ export default function CheckoutPage() {
   const [shippingMethod, setShippingMethod] = useState<'Normal' | 'Express' | 'Overnight' | null>(null);
 
   // Payment Method Polymorphism state
-  const [paymentMethod, setPaymentMethod] = useState<'Credit Card' | 'Cryptocurrency' | 'Apple Cash' | 'Chime'>('Credit Card');
+  const [paymentMethod, setPaymentMethod] = useState<'Cryptocurrency' | 'Apple Cash' | 'Chime'>('Cryptocurrency');
   const [cryptoCurrency, setCryptoCurrency] = useState<'Bitcoin' | 'USDT' | 'USDC' | 'Ethereum'>('Bitcoin');
 
   // Credit Card details state (optional based on method, only evaluated on Credit Card chosen)
@@ -236,41 +236,6 @@ export default function CheckoutPage() {
       return;
     }
 
-    // 3. Conditional Credit Card credentials verification
-    let unspacedCardNumber = '';
-    if (paymentMethod === 'Credit Card') {
-      if (!isGatewayEnabled) {
-        setError('Mastercard checkout processing is temporarily offline. Please select another payment method.');
-        return;
-      }
-
-      if (!cardholderName.trim()) {
-        setError('Please enter the cardholder credit name.');
-        return;
-      }
-
-      unspacedCardNumber = cardNumber.replace(/\s|-/g, '');
-      if (!unspacedCardNumber || unspacedCardNumber.length !== 16) {
-        setError('Please enter a valid 16-digit credit card number.');
-        return;
-      }
-
-      if (expiry.length < 5) {
-        setError('Please enter your card expiration date (MM/YY).');
-        return;
-      }
-
-      if (cvv.length < 3) {
-        setError('Please enter a valid card CVV security code.');
-        return;
-      }
-
-      if (!isMastercard(unspacedCardNumber)) {
-        setError('Only Mastercard payments are currently accepted. Please use a Mastercard or select another payment method.');
-        return;
-      }
-    }
-
     // 4. Force review confirmation
     if (!isReviewedAndConfirmed) {
       setError('Please review your order details below and check the confirmation box before placing your order.');
@@ -296,7 +261,7 @@ export default function CheckoutPage() {
       shipping_method: shippingMethod,
       payment_method: paymentMethod === 'Cryptocurrency' ? `Cryptocurrency (${cryptoCurrency})` : paymentMethod,
       coupon_code: appliedCoupon,
-      card_number: paymentMethod === 'Credit Card' ? unspacedCardNumber : null
+      card_number: null
     };
 
     try {
@@ -539,9 +504,8 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* Main method tabs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#09090b] p-1.5 rounded-2xl border border-[#1f1f23]">
+                <div className="grid grid-cols-3 gap-2 bg-[#09090b] p-1.5 rounded-2xl border border-[#1f1f23]">
                   {[
-                    { key: 'Credit Card', label: 'Credit Card', icon: CreditCard },
                     { key: 'Cryptocurrency', label: 'Crypto', icon: Coins },
                     { key: 'Apple Cash', label: 'Apple Cash', icon: Smartphone },
                     { key: 'Chime', label: 'Chime', icon: DollarSign }
@@ -570,110 +534,6 @@ export default function CheckoutPage() {
 
                 {/* Sub-content structures */}
                 <div className="space-y-4">
-                  {paymentMethod === 'Credit Card' && (
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 space-y-3">
-                        <div className="flex gap-4">
-                          <div className="shrink-0 flex items-center space-x-[-12px] h-10 select-none px-2 bg-[#09090b] rounded-lg border border-[#1d1d21]">
-                            <div className="w-6 h-6 rounded-full bg-[#eb001b] opacity-95"></div>
-                            <div className="w-6 h-6 rounded-full bg-[#ff5f00] opacity-90"></div>
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-white uppercase tracking-wider">Mastercard Accepted Gateway</p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              &quot;Secure credit card payment instructions will be emailed immediately after your order is submitted.&quot;
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card credentials input schema */}
-                      <div className="grid sm:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-gray-400">Cardholder Name *</label>
-                          <input
-                            type="text"
-                            required={paymentMethod === 'Credit Card'}
-                            disabled={!isGatewayEnabled}
-                            placeholder="Johnathan R Doe"
-                            value={cardholderName}
-                            onChange={e => setCardholderName(e.target.value)}
-                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-gray-400 flex justify-between items-center">
-                            <span>Card Number *</span>
-                            {detectedCard !== 'Unknown' && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                                detectedCard === 'Mastercard' ? 'bg-[#ff5f00]/15 text-white border border-[#ff5f00]/30' : 'bg-red-950 text-red-400 border border-red-800'
-                              }`}>
-                                {detectedCard}
-                              </span>
-                            )}
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              required={paymentMethod === 'Credit Card'}
-                              disabled={!isGatewayEnabled}
-                              placeholder="5123 4567 8901 2345"
-                              value={cardNumber}
-                              onChange={handleCardNumberChange}
-                              className={`w-full bg-[#18181c] border rounded-xl p-3.5 pl-11 outline-none text-white text-sm focus:bg-[#1f1f24] transition-all disabled:opacity-40 ${
-                                cardNumber.length > 0 && detectedCard !== 'Mastercard' && detectedCard !== 'Unknown'
-                                  ? 'border-red-600 focus:border-red-500'
-                                  : 'border-[#27272a] focus:border-[#d4af37]'
-                              }`}
-                            />
-                            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500">
-                              {detectedCard === 'Mastercard' ? (
-                                <div className="flex space-x-[-10px] select-none scale-90">
-                                  <div className="w-5 h-5 rounded-full bg-[#eb001b]"></div>
-                                  <div className="w-5 h-5 rounded-full bg-[#ff5f00]"></div>
-                                </div>
-                              ) : (
-                                <CreditCard size={18} />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-gray-400">Expiration Date *</label>
-                          <input
-                            type="text"
-                            required={paymentMethod === 'Credit Card'}
-                            disabled={!isGatewayEnabled}
-                            placeholder="MM/YY"
-                            value={expiry}
-                            onChange={handleExpiryChange}
-                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-gray-400 flex items-center justify-between">
-                            <span>CVV / CVC *</span>
-                            <span title="3 or 4-digit code located on back of card"><HelpCircle size={12} className="text-gray-500" /></span>
-                          </label>
-                          <input
-                            type="password"
-                            required={paymentMethod === 'Credit Card'}
-                            disabled={!isGatewayEnabled}
-                            placeholder="•••"
-                            value={cvv}
-                            onChange={handleCvvChange}
-                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40 font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {paymentMethod === 'Cryptocurrency' && (
                     <div className="space-y-4 bg-[#18181c] border border-[#27272a] rounded-2xl p-5 md:p-6 animate-fadeIn">
                       <div className="space-y-1">
@@ -940,7 +800,7 @@ export default function CheckoutPage() {
                 <button
                   type="submit"
                   form="checkout-form-custom"
-                  disabled={isSubmitting || cartItems.length === 0 || !isReviewedAndConfirmed || (paymentMethod === 'Credit Card' && !isGatewayEnabled)}
+                  disabled={isSubmitting || cartItems.length === 0 || !isReviewedAndConfirmed}
                   className="w-full bg-[#d4af37] hover:bg-[#c5a030] text-black py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-[#d4af37]/10 select-none cursor-pointer duration-150"
                   id="btn-place-order"
                 >
