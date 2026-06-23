@@ -71,6 +71,10 @@ export default function AdminDashboardPage() {
   const [activeStatusChangingId, setActiveStatusChangingId] = useState<string | null>(null);
   const [activeResendingId, setActiveResendingId] = useState<string | null>(null);
 
+  // Email Deliverability Test State
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Retrieve admin order sets and variables
   const fetchData = async () => {
     try {
@@ -193,6 +197,32 @@ export default function AdminDashboardPage() {
       setError('Network transmission error triggering dispatch instructions.');
     } finally {
       setActiveResendingId(null);
+    }
+  };
+
+  // 4. Trigger administrative diagnostic test email
+  const handleSendTestEmail = async () => {
+    setIsTestingEmail(true);
+    setTestEmailResult(null);
+    try {
+      const res = await fetch('/api/admin/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-test-email'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestEmailResult({ success: true, message: data.message });
+      } else {
+        setTestEmailResult({ success: false, message: data.error || 'Unknown dispatch failure.' });
+      }
+    } catch (err: any) {
+      console.error('Test email dispatch error:', err);
+      setTestEmailResult({ success: false, message: 'Failed to communicate with the SMTP diagnostic API.' });
+    } finally {
+      setIsTestingEmail(false);
     }
   };
 
@@ -522,41 +552,90 @@ export default function AdminDashboardPage() {
           </section>
 
           {/* SIMULATED EMAIL NOTIFICATIONS DISPATCH FEED */}
-          <aside className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 space-y-6 text-left select-none">
-            <div>
-              <span className="text-[9px] uppercase font-bold tracking-widest text-[#d4af37] block">VIRTUAL DISPATCH LOGGER</span>
+          <aside className="space-y-6">
+            <div className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 text-left select-none">
+              <span className="text-[9px] uppercase font-bold tracking-widest text-[#d4af37] block">SYSTEM DIAGNOSTICS</span>
               <h3 className="text-base font-bold text-white flex items-center gap-2 mt-1">
-                <Mail size={16} className="text-[#d4af37]" /> SMTP Mail Logs Feed
+                <ShieldAlert size={16} className="text-[#d4af37]" /> SMTP Deliverability Check
               </h3>
               <p className="text-[11px] text-gray-400 leading-normal mt-1.5 font-sans">
-                Real-time SMTP dispatch log showing full-packet invoice transmissions:
+                Verify deliverability and test SMTP relays to <strong className="text-white">sales@boutiqswitchvapes.us</strong> instantly:
               </p>
+
+              <div className="mt-4 space-y-3">
+                <button
+                  onClick={handleSendTestEmail}
+                  disabled={isTestingEmail}
+                  className="w-full bg-[#18181c] hover:bg-[#27272a] border border-[#27272a] hover:border-[#d4af37] text-white py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed select-none cursor-pointer duration-150"
+                  id="btn-test-deliverability"
+                >
+                  {isTestingEmail ? (
+                    <>
+                      <RefreshCw size={12} className="animate-spin text-[#d4af37]" />
+                      <span>Sending Test Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={12} className="text-[#d4af37]" />
+                      <span>Dispatch Test Email to Admin</span>
+                    </>
+                  )}
+                </button>
+
+                {testEmailResult && (
+                  <div className={`p-3 rounded-xl border text-[11px] font-sans ${
+                    testEmailResult.success 
+                      ? 'bg-emerald-950/20 border-emerald-900 text-emerald-400' 
+                      : 'bg-red-950/20 border-red-900 text-red-400'
+                  }`}>
+                    <p className="font-bold mb-0.5">{testEmailResult.success ? 'Success' : 'Error Details'}:</p>
+                    <p className="leading-relaxed">{testEmailResult.message}</p>
+                    {!testEmailResult.success && (
+                      <p className="text-[10px] text-gray-400 mt-1.5">
+                        Ensure you configure <strong>RESEND_API_KEY</strong> under the AI Studio Settings menu and that your sender domain/email is verified in Resend.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {emailLogs.length === 0 ? (
-              <div className="py-12 text-center text-gray-500 border border-dashed border-[#1f1f23] rounded-2xl p-4 text-xs font-medium font-sans">
-                <p>No dispatch tasks logged in database.</p>
-                <p className="text-[10px] text-gray-600 mt-1">Place checkouts or trigger Resends from log entries to populate logs.</p>
+            <div className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 space-y-6 text-left select-none">
+              <div>
+                <span className="text-[9px] uppercase font-bold tracking-widest text-[#d4af37] block">VIRTUAL DISPATCH LOGGER</span>
+                <h3 className="text-base font-bold text-white flex items-center gap-2 mt-1">
+                  <Mail size={16} className="text-[#d4af37]" /> SMTP Mail Logs Feed
+                </h3>
+                <p className="text-[11px] text-gray-400 leading-normal mt-1.5 font-sans">
+                  Real-time SMTP dispatch log showing full-packet invoice transmissions:
+                </p>
               </div>
-            ) : (
-              <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
-                {emailLogs.map((log) => (
-                  <div key={log.id} className="bg-[#18181c] border border-[#27272a] rounded-xl p-3 text-xs space-y-1.5 animate-fadeIn">
-                    <div className="flex justify-between items-center text-[9px] font-mono text-gray-500">
-                      <span>Ref Log: {log.id.slice(0, 10).toUpperCase()}</span>
-                      <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+
+              {emailLogs.length === 0 ? (
+                <div className="py-12 text-center text-gray-500 border border-dashed border-[#1f1f23] rounded-2xl p-4 text-xs font-medium font-sans">
+                  <p>No dispatch tasks logged in database.</p>
+                  <p className="text-[10px] text-gray-600 mt-1">Place checkouts or trigger Resends from log entries to populate logs.</p>
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
+                  {emailLogs.map((log) => (
+                    <div key={log.id} className="bg-[#18181c] border border-[#27272a] rounded-xl p-3 text-xs space-y-1.5 animate-fadeIn">
+                      <div className="flex justify-between items-center text-[9px] font-mono text-gray-500">
+                        <span>Ref Log: {log.id.slice(0, 10).toUpperCase()}</span>
+                        <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-[10px]"><span className="font-bold text-gray-500">Sent To:</span> {log.customerEmail}</p>
+                        <p className="text-white font-bold text-[10px] mt-0.5 leading-snug">{log.subject}</p>
+                      </div>
+                      <div className="bg-[#09090b] text-[10px] text-gray-400 p-2 rounded-lg border border-[#1d1d21] font-mono leading-normal">
+                        &quot;Full-packet transactional receipt dispatched safely. Attached fully formatted Invoice.pdf invoice document.&quot;
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-gray-400 text-[10px]"><span className="font-bold text-gray-500">Sent To:</span> {log.customerEmail}</p>
-                      <p className="text-white font-bold text-[10px] mt-0.5 leading-snug">{log.subject}</p>
-                    </div>
-                    <div className="bg-[#09090b] text-[10px] text-gray-400 p-2 rounded-lg border border-[#1d1d21] font-mono leading-relaxed leading-normal">
-                      &quot;Full-packet transactional receipt dispatched safely. Attached fully formatted Invoice.pdf invoice document.&quot;
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </aside>
         </div>
 

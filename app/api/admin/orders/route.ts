@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deliverAllCheckoutAutomation } from '@/lib/email';
+import { deliverAllCheckoutAutomation, getResend } from '@/lib/email';
 
 // Initialize global tracking structures for sandbox container fallbacks
 if (!(globalThis as any).__inMemoryOrdersStore) {
@@ -120,6 +120,77 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, message: `Mastercard gateway toggled to ${isEnabledString}.` });
+    }
+
+    // Send administrative test email
+    if (action === 'send-test-email') {
+      const resend = getResend();
+      if (!resend) {
+        return NextResponse.json({
+          success: false,
+          error: 'RESEND_API_KEY is not configured. Please add RESEND_API_KEY to your environment variables / secrets in the AI Studio Settings panel.'
+        }, { status: 400 });
+      }
+
+      const senderEmail = process.env.RESEND_FROM_EMAIL || 'Boutiq Switch Vapes <orders@boutiqswitchvapes.us>';
+      const adminEmail = process.env.ADMIN_EMAIL || 'sales@boutiqswitchvapes.us';
+
+      try {
+        const testResponse = await resend.emails.send({
+          from: senderEmail,
+          to: [adminEmail],
+          subject: `[DIAGNOSTIC TEST] Resend SMTP Deliverability Check`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #ffffff; padding: 40px; text-align: left;">
+              <div style="max-width: 600px; margin: 0 auto; background-color: #121214; border: 1px solid #1f1f23; border-radius: 24px; padding: 40px; box-sizing: border-box;">
+                <div style="border-bottom: 1px solid #1f1f23; padding-bottom: 20px; margin-bottom: 24px; text-align: center;">
+                  <h1 style="color: #ffffff; font-size: 22px; font-weight: 800; text-transform: uppercase; margin: 0;">Boutiq Switch Vapes</h1>
+                  <p style="color: #d4af37; font-size: 10px; font-weight: bold; letter-spacing: 2px; margin: 4px 0 0 0; text-transform: uppercase;">Resend Integration Status</p>
+                </div>
+                
+                <h3 style="color: #ffffff; font-size: 16px; font-weight: bold; margin: 0 0 12px 0;">🎉 Resend SMTP Live Connection Diagnostic</h3>
+                <p style="color: #a1a1aa; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+                  This is an automated deliverability validation trigger dispatched directly from your Boutiq Switch Vapes administrative dashboard. If you are reading this message, your Resend API integration is fully online and capable of distributing notification letters!
+                </p>
+
+                <div style="background-color: #1a1a1f; border-left: 4px solid #d4af37; border-radius: 4px 16px 16px 4px; padding: 20px; margin-bottom: 24px;">
+                  <h4 style="margin: 0 0 8px 0; color: #ffffff; font-size: 12px; text-transform: uppercase; font-weight: bold;">Connection Details</h4>
+                  <table style="width: 100%; font-size: 12px; color: #a1a1aa; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 4px 0;"><strong>Sender Host (From):</strong></td>
+                      <td style="color: #ffffff; font-family: monospace; text-align: right;">${senderEmail}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 4px 0;"><strong>Admin Recipient (To):</strong></td>
+                      <td style="color: #ffffff; font-family: monospace; text-align: right;">${adminEmail}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 4px 0;"><strong>Timestamp Generated:</strong></td>
+                      <td style="color: #ffffff; font-family: monospace; text-align: right;">${new Date().toISOString()}</td>
+                    </tr>
+                  </table>
+                </div>
+
+                <div style="text-align: center; border-top: 1px solid #1f1f23; padding-top: 20px; font-size: 11px; color: #71717a;">
+                  <p style="margin: 0;">This email confirms that both client checkout notifications and admin sales notifications will deliver correctly upon order submissions.</p>
+                </div>
+              </div>
+            </div>
+          `
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: `Live diagnostic email successfully dispatched to ${adminEmail}!`,
+          resend_id: (testResponse as any)?.id || 'unknown'
+        });
+      } catch (err: any) {
+        console.error('Test email sending failure:', err);
+        return NextResponse.json({
+          success: false,
+          error: `Resend API returned an error: ${err.message || err}`
+        }, { status: 500 });
+      }
     }
 
     // Update individual order payment status (Pending Payment -> Paid | Failed)

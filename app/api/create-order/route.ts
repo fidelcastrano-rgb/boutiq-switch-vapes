@@ -50,26 +50,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate payment method selection
-    if (!payment_method || !['Credit Card', 'Cryptocurrency', 'Apple Cash', 'Chime'].includes(payment_method)) {
+    if (!payment_method || !['Cryptocurrency', 'Apple Cash', 'Chime'].includes(payment_method)) {
       return NextResponse.json({ success: false, error: 'Please select a valid payment method.' }, { status: 400 });
     }
 
-    // 2. Validate Credit Card Details (Require Mastercard - ONLY if Credit Card payment method is selected)
     let cardLast4: string | null = null;
-    if (payment_method === 'Credit Card') {
-      if (!card_number) {
-        return NextResponse.json({ success: false, error: 'Please enter a valid credit card number for checkout.' }, { status: 400 });
-      }
-
-      const unspacedCardNumber = card_number.replace(/\s|-/g, '');
-      if (!isMastercard(unspacedCardNumber)) {
-        return NextResponse.json({
-          success: false,
-          error: 'Only Mastercard payments are currently accepted. Please use a Mastercard or select another payment method.'
-        }, { status: 400 });
-      }
-      cardLast4 = unspacedCardNumber.slice(-4);
-    }
 
     // 3. Cloudflare D1 Backend Binding setup
     let db: any = null;
@@ -107,14 +92,6 @@ export async function POST(req: NextRequest) {
       }
     } else {
       mastercardEnabled = (globalThis as any).__inMemoryAdminSettings['mastercard_payments_enabled'] === 'true';
-    }
-
-    // Reject Credit Card checkout if administrative block is configured
-    if (payment_method === 'Credit Card' && !mastercardEnabled) {
-      return NextResponse.json({
-        success: false,
-        error: 'Mastercard payment checkout processing is temporarily offline. Please contact customer support.'
-      }, { status: 403 });
     }
 
     // 5. SERVER-SIDE CALCULATION ENGINE ONLY (Recalculate Totals & Discounts)
