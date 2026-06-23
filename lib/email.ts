@@ -142,20 +142,8 @@ export async function deliverAllCheckoutAutomation(order: any, db?: any) {
 
           <p style="color: #e4e4e7; font-size: 15px; margin: 0 0 16px 0;">Hello <strong>${order.customer_name || 'Valued Customer'}</strong>,</p>
           <p style="color: #a1a1aa; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
-            Thank you for checking out with Boutiq Switch Vapes! Your checkout has been safely saved under reference <strong>#${shortId}</strong>. Below is your payment instruction notice and ordering metrics. We have also attached a secure billing PDF Invoice to this email.
+            Thank you for checking out with Boutiq Switch Vapes! Your order has been safely received under reference <strong>#${shortId}</strong>. Our team will contact you shortly with the manual payment instructions to complete your purchase. Below is a summary of your order metrics. We have also attached your PDF Invoice to this email.
           </p>
-
-          <!-- PAYMENT NOTICE CARD -->
-          <div style="background-color: #1a1a1f; border-left: 4px solid #d4af37; border-radius: 4px 16px 16px 4px; padding: 20px; margin-bottom: 24px;">
-            <h3 style="margin: 0 0 8px 0; color: #ffffff; font-size: 14px; text-transform: uppercase; font-weight: bold;">⚠️ Immediate Fulfill Instructions</h3>
-            <p style="margin: 0 0 12px 0; font-size: 13px; color: #a1a1aa; line-height: 1.5;">
-              To progress your order, please complete your transfer using your chosen method (<strong style="color: #fff;">${order.payment_method}</strong>):
-            </p>
-            ${instructions.html}
-            <p style="margin: 12px 0 0 0; font-size: 11px; color: #e4e4e7;">
-              * Hold Limit: Your items are reserved for exactly 48 hours. After this threshold, pending invoices are voided.
-            </p>
-          </div>
 
           <!-- Checkout Details -->
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px;">
@@ -200,7 +188,7 @@ export async function deliverAllCheckoutAutomation(order: any, db?: any) {
       const data = await resend.emails.send({
         from: senderEmail,
         to: [order.customer_email],
-        subject: `Payment Instructions for Order #${shortId}`,
+        subject: `Order Confirmation #${shortId}`,
         html: customerEmailHtml,
         attachments: [
           {

@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate payment method selection
-    if (!payment_method || !['Cryptocurrency', 'Apple Cash', 'Chime'].includes(payment_method)) {
+    const isCryptoPayment = payment_method && (payment_method === 'Cryptocurrency' || payment_method.startsWith('Cryptocurrency ('));
+    const isValidPaymentMethod = isCryptoPayment || ['Apple Cash', 'Chime'].includes(payment_method);
+    if (!payment_method || !isValidPaymentMethod) {
       return NextResponse.json({ success: false, error: 'Please select a valid payment method.' }, { status: 400 });
     }
 
@@ -137,7 +139,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Crypto Payments 10% Discount calculation (Bitcoin, USDT, USDC, Ethereum)
-    const isCrypto = payment_method === 'Cryptocurrency';
+    const isCrypto = payment_method && (payment_method === 'Cryptocurrency' || payment_method.startsWith('Cryptocurrency ('));
     let cryptoDiscountAmount = 0;
     if (isCrypto) {
       cryptoDiscountAmount = Number(((subtotal - couponDiscountAmount) * 0.10).toFixed(2));
