@@ -5,6 +5,7 @@ import { sendOrderConfirmation, sendAdminNotification } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   try {
+    console.log('1. Request received for checkout');
     const body = await req.json();
     const {
       customer_name,
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Your cart is empty.' }, { status: 400 });
     }
 
+    console.log('2. Starting order validation');
     // 2. Server-side validation of cart items & price calculation
     let subtotal = 0;
     const validatedItems = [];
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
     const grandTotal = Math.max(0, subtotal - totalDiscount + shippingCost);
 
     // 7. Store order inside DB
+    console.log('3. Proceeding to D1 database insert');
     const orderId = crypto.randomUUID();
     const orderNumber = `BSV-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -165,13 +168,15 @@ export async function POST(req: NextRequest) {
       order_status: 'Pending Payment'
     };
 
+    console.log('4. Order inserted into DB successfully, preparing email dispatch');
     // 9. Dispatch Resend notifications asynchronously
-    // Using Promise.allSettled to ensure order response completes even if some emails slow down
-    Promise.allSettled([
+    // Using await Promise.allSettled to ensure order response completes and emails don't get stuck in Edge
+    await Promise.allSettled([
       sendOrderConfirmation(finalizedOrder, validatedItems),
       sendAdminNotification(finalizedOrder, validatedItems)
     ]).catch(err => console.error('Error dispatching checkout emails', err));
 
+    console.log('5. Returning final response');
     return NextResponse.json({
       success: true,
       orderNumber,

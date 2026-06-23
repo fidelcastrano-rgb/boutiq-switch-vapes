@@ -93,7 +93,7 @@ function getLocalDb() {
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const cloudflareD1 = (process.env as any).DB as D1Database | undefined;
   
-  if (cloudflareD1) {
+  if (cloudflareD1 && typeof cloudflareD1.prepare === 'function') {
     const stmt = cloudflareD1.prepare(sql).bind(...params);
     const result = await stmt.all<T>();
     return result.results || [];
@@ -110,7 +110,7 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<T
 export async function execute(sql: string, params: any[] = []): Promise<{ changes: number; lastInsertRowid: any }> {
   const cloudflareD1 = (process.env as any).DB as D1Database | undefined;
   
-  if (cloudflareD1) {
+  if (cloudflareD1 && typeof cloudflareD1.prepare === 'function') {
     const stmt = cloudflareD1.prepare(sql).bind(...params);
     const result = await stmt.run();
     return { changes: 1, lastInsertRowid: null };
