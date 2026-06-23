@@ -1,6 +1,4 @@
-import Database from 'better-sqlite3';
-import { join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { createClient } from '@libsql/client';
 
 // Types for Cloudflare D1 bindings in production env
 interface D1Database {
@@ -14,74 +12,77 @@ interface D1PreparedStatement {
   run: () => Promise<{ success: boolean; results?: any[] }>;
 }
 
-let localDb: any = null;
+let localDb: ReturnType<typeof createClient> | null = null;
+let initialized = false;
 
 // Helper to get local database and initialize with schema if it is brand new
-function getLocalDb() {
-  if (localDb) return localDb;
-  
-  // Use /tmp for reliable writable storage in serverless/container environments
-  const dbPath = join('/tmp', 'd1.db');
-  
-  localDb = new Database(dbPath);
-  
-  try {
-    localDb.exec(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id TEXT PRIMARY KEY,
-        order_number TEXT NOT NULL UNIQUE,
-        customer_name TEXT NOT NULL,
-        customer_email TEXT NOT NULL,
-        customer_phone TEXT,
-        shipping_address TEXT NOT NULL,
-        country TEXT NOT NULL,
-        state TEXT NOT NULL,
-        city TEXT NOT NULL,
-        zip_code TEXT NOT NULL,
-        subtotal REAL NOT NULL,
-        shipping_cost REAL NOT NULL,
-        discount_amount REAL DEFAULT 0,
-        coupon_code TEXT,
-        payment_method TEXT NOT NULL,
-        order_total REAL NOT NULL,
-        order_status TEXT DEFAULT 'Pending Payment',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
+async function getLocalDb() {
+  if (!localDb) {
+    localDb = createClient({
+      url: "file:/tmp/libsql.db"
+    });
+  }
 
-      CREATE TABLE IF NOT EXISTS order_items (
-        id TEXT PRIMARY KEY,
-        order_id TEXT NOT NULL,
-        product_id TEXT NOT NULL,
-        product_name TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        price REAL NOT NULL,
-        FOREIGN KEY (order_id) REFERENCES orders(id)
-      );
+  if (!initialized) {
+    try {
+      await localDb.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS orders (
+          id TEXT PRIMARY KEY,
+          order_number TEXT NOT NULL UNIQUE,
+          customer_name TEXT NOT NULL,
+          customer_email TEXT NOT NULL,
+          customer_phone TEXT,
+          shipping_address TEXT NOT NULL,
+          country TEXT NOT NULL,
+          state TEXT NOT NULL,
+          city TEXT NOT NULL,
+          zip_code TEXT NOT NULL,
+          subtotal REAL NOT NULL,
+          shipping_cost REAL NOT NULL,
+          discount_amount REAL DEFAULT 0,
+          coupon_code TEXT,
+          payment_method TEXT NOT NULL,
+          order_total REAL NOT NULL,
+          order_status TEXT DEFAULT 'Pending Payment',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-      CREATE TABLE IF NOT EXISTS coupons (
-        id TEXT PRIMARY KEY,
-        code TEXT NOT NULL UNIQUE,
-        discount_percent REAL NOT NULL,
-        active BOOLEAN DEFAULT TRUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
+        CREATE TABLE IF NOT EXISTS order_items (
+          id TEXT PRIMARY KEY,
+          order_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          price REAL NOT NULL,
+          FOREIGN KEY (order_id) REFERENCES orders(id)
+        );
 
-      INSERT OR IGNORE INTO coupons (id, code, discount_percent, active) 
-      VALUES ('welcome-10-id', 'WELCOME10', 10.0, TRUE);
+        CREATE TABLE IF NOT EXISTS coupons (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL UNIQUE,
+          discount_percent REAL NOT NULL,
+          active BOOLEAN DEFAULT TRUE,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-      CREATE TABLE IF NOT EXISTS abandoned_carts (
-        id TEXT PRIMARY KEY,
-        customer_email TEXT NOT NULL,
-        customer_name TEXT,
-        cart_data TEXT NOT NULL,
-        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
-        email_1h_sent INTEGER DEFAULT 0,
-        email_24h_sent INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-  } catch (err) {
-    console.error('Error initializing SQLite local schema:', err);
+        INSERT OR IGNORE INTO coupons (id, code, discount_percent, active) 
+        VALUES ('welcome-10-id', 'WELCOME10', 10.0, TRUE);
+
+        CREATE TABLE IF NOT EXISTS abandoned_carts (
+          id TEXT PRIMARY KEY,
+          customer_email TEXT NOT NULL,
+          customer_name TEXT,
+          cart_data TEXT NOT NULL,
+          last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+          email_1h_sent INTEGER DEFAULT 0,
+          email_24h_sent INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      initialized = true;
+    } catch (err) {
+      console.error('Error initializing SQLite local schema:', err);
+    }
   }
   
   return localDb;
@@ -98,9 +99,9 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<T
     const result = await stmt.all<T>();
     return result.results || [];
   } else {
-    const db = getLocalDb();
-    const stmt = db.prepare(sql);
-    return stmt.all(...params) as T[];
+    const db = await getLocalDb();
+    const result = await db.execute({ sql, args: params });
+    return result.rows as unknown as T[];
   }
 }
 
@@ -115,12 +116,11 @@ export async function execute(sql: string, params: any[] = []): Promise<{ change
     const result = await stmt.run();
     return { changes: 1, lastInsertRowid: null };
   } else {
-    const db = getLocalDb();
-    const stmt = db.prepare(sql);
-    const result = stmt.run(...params);
+    const db = await getLocalDb();
+    const result = await db.execute({ sql, args: params });
     return {
-      changes: result.changes,
-      lastInsertRowid: result.lastInsertRowid
+      changes: result.rowsAffected,
+      lastInsertRowid: result.lastInsertRowid ? result.lastInsertRowid.toString() : null
     };
   }
 }
