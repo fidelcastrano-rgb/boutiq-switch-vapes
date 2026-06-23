@@ -24,31 +24,6 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Pre-fill with a couple of premium items if empty to avoid frustration of an empty cart
-function checkDefaultItems() {
-  if (cartItems.length === 0) {
-    cartItems = [
-      {
-        id: 'boutiq-switch-v4-strawberry-haze-watermelon-z-2g-disposable-vape-official-boutiq-switch',
-        name: 'Boutiq Switch V4 (Strawberry Haze x Watermelon Z)',
-        price: 35.00,
-        image: 'https://picsum.photos/seed/v4straw/400/400',
-        variant: 'Strawberry Haze x Watermelon Z',
-        quantity: 3
-      },
-      {
-        id: 'boutiq-snack-pack-live-diamonds-2-5g-minis-apple-fritter-infused-w-trufflez',
-        name: 'Boutiq Snack Pack 2.5G Minis (Apple Fritter x Trufflez)',
-        price: 55.00,
-        image: 'https://picsum.photos/seed/snackapple/400/400',
-        variant: 'Apple Fritter infused w/ Trufflez',
-        quantity: 2
-      }
-    ];
-    saveCart();
-  }
-}
-
 function saveCart() {
   if (typeof window !== 'undefined') {
     try {
@@ -62,9 +37,6 @@ function saveCart() {
 
 export const cartStore = {
   getItems() {
-    if (cartItems.length === 0 && typeof window !== 'undefined') {
-      checkDefaultItems();
-    }
     return cartItems;
   },
   
