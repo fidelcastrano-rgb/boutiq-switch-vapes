@@ -766,8 +766,8 @@ export default function CheckoutPage() {
             </div>
 
             <button 
-              type="button"
-              onClick={handleFormSubmit}
+              type="submit"
+              form="checkout-form"
               disabled={isSubmitting || isPaymentViolated || cartItems.length === 0}
               className={`w-full py-4 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 isPaymentViolated || cartItems.length === 0

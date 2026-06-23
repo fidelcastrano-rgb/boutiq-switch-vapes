@@ -20,52 +20,68 @@ let localDb: any = null;
 function getLocalDb() {
   if (localDb) return localDb;
   
-  const dbPath = join(process.cwd(), 'd1.db');
-  const isNew = !existsSync(dbPath);
+  // Use /tmp for reliable writable storage in serverless/container environments
+  const dbPath = join('/tmp', 'd1.db');
   
   localDb = new Database(dbPath);
   
-  if (isNew) {
-    try {
-      const schemaPath = join(process.cwd(), 'schema.sql');
-      if (existsSync(schemaPath)) {
-        const schema = readFileSync(schemaPath, 'utf8');
-        localDb.exec(schema);
-        
-        // Add abandoned_carts table to trace users who leave checkouts incomplete
-        localDb.exec(`
-          CREATE TABLE IF NOT EXISTS abandoned_carts (
-            id TEXT PRIMARY KEY,
-            customer_email TEXT NOT NULL,
-            customer_name TEXT,
-            cart_data TEXT NOT NULL,
-            last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
-            email_1h_sent INTEGER DEFAULT 0,
-            email_24h_sent INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-          );
-        `);
-      }
-    } catch (err) {
-      console.error('Error initializing SQLite local schema:', err);
-    }
-  } else {
-    try {
-      localDb.exec(`
-        CREATE TABLE IF NOT EXISTS abandoned_carts (
-          id TEXT PRIMARY KEY,
-          customer_email TEXT NOT NULL,
-          customer_name TEXT,
-          cart_data TEXT NOT NULL,
-          last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
-          email_1h_sent INTEGER DEFAULT 0,
-          email_24h_sent INTEGER DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-    } catch (err) {
-      // already exists or failed
-    }
+  try {
+    localDb.exec(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        order_number TEXT NOT NULL UNIQUE,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_phone TEXT,
+        shipping_address TEXT NOT NULL,
+        country TEXT NOT NULL,
+        state TEXT NOT NULL,
+        city TEXT NOT NULL,
+        zip_code TEXT NOT NULL,
+        subtotal REAL NOT NULL,
+        shipping_cost REAL NOT NULL,
+        discount_amount REAL DEFAULT 0,
+        coupon_code TEXT,
+        payment_method TEXT NOT NULL,
+        order_total REAL NOT NULL,
+        order_status TEXT DEFAULT 'Pending Payment',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS order_items (
+        id TEXT PRIMARY KEY,
+        order_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price REAL NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS coupons (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        discount_percent REAL NOT NULL,
+        active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      INSERT OR IGNORE INTO coupons (id, code, discount_percent, active) 
+      VALUES ('welcome-10-id', 'WELCOME10', 10.0, TRUE);
+
+      CREATE TABLE IF NOT EXISTS abandoned_carts (
+        id TEXT PRIMARY KEY,
+        customer_email TEXT NOT NULL,
+        customer_name TEXT,
+        cart_data TEXT NOT NULL,
+        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+        email_1h_sent INTEGER DEFAULT 0,
+        email_24h_sent INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (err) {
+    console.error('Error initializing SQLite local schema:', err);
   }
   
   return localDb;
