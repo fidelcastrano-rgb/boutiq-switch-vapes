@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Boutiq Switch International",
+  "description": "US Most Trusted Disposable Carts Wholesaler and Retailer",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
