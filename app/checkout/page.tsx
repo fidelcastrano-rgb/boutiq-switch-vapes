@@ -254,10 +254,14 @@ export default function CheckoutPage() {
           // Ignored
         }
       } else {
+        console.error('Checkout API returned error:', data.error);
         setCheckoutError(data.error || 'Checkout registration failed.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
+      console.error('Fetch Checkout Error:', err);
       setCheckoutError('Network error registering checkout. Please try again.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setIsSubmitting(false);
     }

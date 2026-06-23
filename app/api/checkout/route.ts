@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { execute, query } from '@/lib/db';
 import { PRODUCTS } from '@/lib/data';
 import { sendOrderConfirmation, sendAdminNotification } from '@/lib/email';
+import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   try {
@@ -115,29 +116,34 @@ export async function POST(req: NextRequest) {
     const orderId = crypto.randomUUID();
     const orderNumber = `BSV-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Prepare inputs
-    await execute(
-      `INSERT INTO orders (
-        id, order_number, customer_name, customer_email, customer_phone, 
-        shipping_address, country, state, city, zip_code, 
-        subtotal, shipping_cost, discount_amount, coupon_code, 
-        payment_method, order_total, order_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Payment')`,
-      [
-        orderId, orderNumber, customer_name, customer_email, customer_phone || null,
-        shipping_address, country, state, city, zip_code,
-        subtotal, shippingCost, totalDiscount, coupon_code || null,
-        payment_method, grandTotal
-      ]
-    );
-
-    // Insert order items
-    for (const item of validatedItems) {
-      const itemRowId = crypto.randomUUID();
+    try {
+      // Prepare inputs
       await execute(
-        'INSERT INTO order_items (id, order_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?, ?)',
-        [itemRowId, orderId, item.product_id, item.product_name, item.quantity, item.price]
+        `INSERT INTO orders (
+          id, order_number, customer_name, customer_email, customer_phone, 
+          shipping_address, country, state, city, zip_code, 
+          subtotal, shipping_cost, discount_amount, coupon_code, 
+          payment_method, order_total, order_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Payment')`,
+        [
+          orderId, orderNumber, customer_name, customer_email, customer_phone || null,
+          shipping_address, country, state, city, zip_code,
+          subtotal, shippingCost, totalDiscount, coupon_code || null,
+          payment_method, grandTotal
+        ]
       );
+
+      // Insert order items
+      for (const item of validatedItems) {
+        const itemRowId = crypto.randomUUID();
+        await execute(
+          'INSERT INTO order_items (id, order_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?, ?)',
+          [itemRowId, orderId, item.product_id, item.product_name, item.quantity, item.price]
+        );
+      }
+    } catch (dbErr: any) {
+      console.error('Database Insert Error:', dbErr);
+      return NextResponse.json({ success: false, error: 'Database error storing order details: ' + (dbErr.message || '') }, { status: 500 });
     }
 
     // 8. Delete corresponding abandoned cart now that they checked out successfully
