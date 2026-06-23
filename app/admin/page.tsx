@@ -16,7 +16,11 @@ import {
   XCircle,
   Clock,
   ArrowRight,
-  ListFilter
+  ListFilter,
+  Globe,
+  Tag,
+  Coins,
+  Truck
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -32,11 +36,17 @@ interface OrderRecord {
   customer_name: string;
   customer_email: string;
   customer_address: string;
+  customer_country?: string;
   total: number;
   payment_method: string;
   payment_status: string;
-  card_last4: string;
+  card_last4?: string;
   created_at: string;
+  shipping_method?: string;
+  coupon_code?: string;
+  discount_percentage?: number;
+  discount_amount?: number;
+  crypto_discount?: number;
   items: OrderItem[] | string;
 }
 
@@ -61,7 +71,7 @@ export default function AdminDashboardPage() {
   const [activeStatusChangingId, setActiveStatusChangingId] = useState<string | null>(null);
   const [activeResendingId, setActiveResendingId] = useState<string | null>(null);
 
-  // Declare fetch handler first to comply with react-hooks/immutability and hosting standards
+  // Retrieve admin order sets and variables
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -71,9 +81,7 @@ export default function AdminDashboardPage() {
       
       if (data.success) {
         setOrders(data.orders || []);
-        // Match payment toggle flag
         setMastercardEnabled(data.mastercard_payments_enabled !== false);
-        // Load simulated logs
         setEmailLogs(data.email_dispatches || []);
       } else {
         setError(data.error || 'Server rejected retrieving order sets.');
@@ -86,7 +94,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Fetch admin order sets on mount
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchData();
@@ -94,7 +101,7 @@ export default function AdminDashboardPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 1. Toggle Mastercard checks globally
+  // 1. Toggle Mastercard restrictions globally
   const handleToggleGateway = async () => {
     setIsMutatingSettings(true);
     setActionSuccessMsg(null);
@@ -113,7 +120,7 @@ export default function AdminDashboardPage() {
 
       if (data.success) {
         setMastercardEnabled(targetStatus);
-        setActionSuccessMsg(`Mastercard payment option successfully ${targetStatus ? 'Enabled' : 'Disabled'}!`);
+        setActionSuccessMsg(`Mastercard payment requirements configured as: ${targetStatus ? 'Enabled' : 'Disabled'}.`);
       } else {
         setError(data.error || 'Could not update gateway toggle settings.');
       }
@@ -143,9 +150,8 @@ export default function AdminDashboardPage() {
       const data = await res.json();
 
       if (data.success) {
-        // Optimistically update lists local
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, payment_status: status } : o));
-        setActionSuccessMsg(`Order ${orderId.substring(0, 8).toUpperCase()} status changed to ${status}!`);
+        setActionSuccessMsg(`Order ${orderId.substring(0, 8).toUpperCase()} status successfully marked as ${status}!`);
       } else {
         setError(data.error || 'Error mutating order status references.');
       }
@@ -174,7 +180,7 @@ export default function AdminDashboardPage() {
       const data = await res.json();
 
       if (data.success) {
-        setActionSuccessMsg(`Payment instruction dispatch sent to ${data.dispatch.customerEmail}!`);
+        setActionSuccessMsg(`Unified checkout notification successfully resubmitted to ${data.dispatch.customerEmail}!`);
         // Append log locally
         if (data.dispatch) {
           setEmailLogs(prev => [data.dispatch, ...prev]);
@@ -190,7 +196,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Helper calculation formulas
+  // Calculations for stats summary cards
   const totalSalesVolume = orders
     .filter(o => o.payment_status === 'Paid')
     .reduce((acc, o) => acc + Number(o.total || 0), 0);
@@ -234,15 +240,15 @@ export default function AdminDashboardPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span className="text-[10px] font-bold text-[#d4af37] tracking-widest uppercase">Administrative Headquarters</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white font-sans mt-1">Mastercard Control Dashboard</h1>
-            <p className="text-gray-400 text-xs mt-1">Manage global checkout restrictions, inspect sales logs, and trigger notification templates.</p>
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white font-sans mt-1">Order Log & Logistics Board</h1>
+            <p className="text-gray-400 text-xs mt-1">Manage global checkout restrictions, coupon usage, shipping methods, customer country profiles, and invoice logs.</p>
           </div>
 
           {/* ACTIVE MASTERCARD ENABLEMENT TOGGLE BLOCK */}
           <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-4 flex items-center justify-between gap-6 min-w-[280px]">
             <div>
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Gateway Configuration</p>
-              <p className="text-xs text-white font-bold mt-1">Mastercard Payments</p>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Gateway status</p>
+              <p className="text-xs text-white font-bold mt-1">Mastercard Authorization</p>
             </div>
             
             <button
@@ -252,13 +258,13 @@ export default function AdminDashboardPage() {
               title="Toggle checkout active state"
             >
               {mastercardEnabled ? (
-                <div className="flex items-center gap-2 text-emerald-450 hover:text-emerald-400">
-                  <span className="text-xs font-bold font-mono">ACTIVE</span>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <span className="text-xs font-bold font-mono">ENFORCED</span>
                   <ToggleRight size={38} className="text-emerald-400 stroke-[1.5]" />
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-gray-500 hover:text-gray-400">
-                  <span className="text-xs font-bold font-mono">OFFLINE</span>
+                <div className="flex items-center gap-2 text-gray-500">
+                  <span className="text-xs font-bold font-mono">BYPASSED</span>
                   <ToggleLeft size={38} className="text-gray-500 stroke-[1.5]" />
                 </div>
               )}
@@ -275,7 +281,7 @@ export default function AdminDashboardPage() {
         )}
 
         {error && (
-          <div className="bg-red-950/20 border border-red-900 text-red-405 text-xs font-bold mb-8 rounded-2xl p-4 flex items-center gap-2.5">
+          <div className="bg-red-950/20 border border-red-900 text-red-400 text-xs font-bold mb-8 rounded-2xl p-4 flex items-center gap-2.5">
             <ShieldAlert size={16} className="shrink-0" />
             <span>{error}</span>
           </div>
@@ -286,12 +292,12 @@ export default function AdminDashboardPage() {
           
           <div className="bg-[#121214] border border-[#1f1f23] rounded-2xl p-5 space-y-3">
             <div className="flex justify-between items-center text-gray-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Mastercard Volume (Paid)</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Gross Volume (Paid)</span>
               <TrendingUp size={16} className="text-emerald-400" />
             </div>
             <div className="space-y-1">
               <p className="font-mono text-2xl font-black text-white">${totalSalesVolume.toFixed(2)}</p>
-              <p className="text-[10px] text-gray-500">Gross funds successfully collected</p>
+              <p className="text-[10px] text-gray-500">Total cleared sales volume</p>
             </div>
           </div>
 
@@ -302,44 +308,44 @@ export default function AdminDashboardPage() {
             </div>
             <div className="space-y-1">
               <p className="font-mono text-2xl font-black text-white">${pendingMastercardVolume.toFixed(2)}</p>
-              <p className="text-[10px] text-gray-500">Awaiting emailed instruction clearance</p>
+              <p className="text-[10px] text-gray-500">Awaiting payment instruction triggers</p>
             </div>
           </div>
 
           <div className="bg-[#121214] border border-[#1f1f23] rounded-2xl p-5 space-y-3">
             <div className="flex justify-between items-center text-gray-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Mastercard Orders Count</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Database Total Orders</span>
               <ShoppingBag size={16} className="text-[#d4af37]" />
             </div>
             <div className="space-y-1">
               <p className="font-mono text-2xl font-black text-white">{orders.length}</p>
-              <p className="text-[10px] text-gray-500">Total checkouts captured in database</p>
+              <p className="text-[10px] text-gray-500">Total checkouts in persistent storage</p>
             </div>
           </div>
 
           <div className="bg-[#121214] border border-[#1f1f23] rounded-2xl p-5 space-y-3">
             <div className="flex justify-between items-center text-gray-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Gateway Status Feed</span>
-              <span className={`w-2.5 h-2.5 rounded-full ${mastercardEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-red-50 text-red-500'}`}></span>
+              <span className="text-xs font-bold uppercase tracking-wider">System Filter Status</span>
+              <span className={`w-2.5 h-2.5 rounded-full ${mastercardEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
             </div>
             <div className="space-y-1">
-              <p className="text-base font-black text-white">{mastercardEnabled ? 'ENFORCED (MC Only)' : 'CHECKOUT DISABLED'}</p>
-              <p className="text-[10px] text-gray-500">Global client acceptance filter state</p>
+              <p className="text-sm font-black text-white">{mastercardEnabled ? 'MC GATEWAY STRICT' : 'NORMAL (ALL GATEWAYS)'}</p>
+              <p className="text-[10px] text-gray-500">Global CC validations flag state</p>
             </div>
           </div>
 
         </div>
 
         {/* Grid layout: orders list feed / email logs sidebar */}
-        <div className="grid lg:grid-cols-[1fr_360px] gap-8 items-start">
+        <div className="grid lg:grid-cols-[1fr_390px] gap-8 items-start">
           
           {/* ORDERS LOG FEED */}
           <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 space-y-6 text-left">
             <div className="flex justify-between items-center border-b border-[#1f1f23] pb-4">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <ListFilter size={18} className="text-[#d4af37]" /> Mastercard Orders Log ({orders.length})
+                <ListFilter size={18} className="text-[#d4af37]" /> Unified Orders Registry ({orders.length})
               </h2>
-              <span className="text-[10px] font-mono text-gray-500 uppercase">D1 DB SYNCHRONIZED</span>
+              <span className="text-[10px] font-mono text-gray-500 uppercase">D1 SQLite Store</span>
             </div>
 
             {loading ? (
@@ -350,39 +356,51 @@ export default function AdminDashboardPage() {
             ) : orders.length === 0 ? (
               <div className="py-20 text-center text-gray-400 space-y-3 bg-[#18181c]/50 rounded-2xl border border-dashed border-[#27272a] p-6">
                 <ShoppingBag size={34} className="mx-auto text-gray-600" />
-                <p className="text-sm font-semibold">No Mastercard orders logged yet.</p>
-                <p className="text-xs text-gray-405 max-w-sm mx-auto">Place a secure checkout using a valid Mastercard to populate the administrative ledger.</p>
+                <p className="text-sm font-semibold">No orders logged yet.</p>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1">Place a secure checkout to populate the administrative ledger.</p>
                 <Link href="/products" className="inline-block mt-2 text-xs bg-[#d4af37] text-black px-4 py-2 rounded-lg font-bold hover:bg-[#c5a030] transition-colors">
                   Submit test checkout
                 </Link>
               </div>
             ) : (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {orders.map((ord) => {
                   const itemsList = getParsedItems(ord.items);
                   const shortId = ord.id.substring(0, 8).toUpperCase();
+                  
+                  // Financial breakdowns
+                  const productSubtotal = itemsList.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
+                  const couponDiscount = Number(ord.discount_amount || 0);
+                  const cryptoDiscount = Number(ord.crypto_discount || 0);
+                  
+                  // Calculate shipping fee stored in record
+                  let shippingCost = 20;
+                  const methodUpper = (ord.shipping_method || 'Normal').toUpperCase();
+                  if (methodUpper.includes('OVERNIGHT')) shippingCost = 60;
+                  else if (methodUpper.includes('EXPRESS')) shippingCost = 35;
+                  else if (methodUpper.includes('NORMAL')) shippingCost = 20;
 
                   return (
-                    <div key={ord.id} className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 space-y-4 hover:border-[#38383c] transition-colors">
+                    <div key={ord.id} className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 space-y-4 hover:border-[#38383c] transition-colors" id={`order-card-${ord.id}`}>
                       
                       {/* Order general header */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#27272a] pb-3 gap-3">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-mono text-sm font-black text-white">ORDER #{shortId}</h4>
+                            <span className="text-[9px] bg-sky-950 text-sky-400 border border-sky-900 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                              <Globe size={11} /> {ord.customer_country || 'United States'}
+                            </span>
                             <span className="text-[10px] text-gray-500 font-mono">({new Date(ord.created_at).toLocaleDateString()})</span>
                           </div>
                           
-                          {/* Payment badge and card details */}
-                          <div className="flex items-center gap-2 text-[10px] text-gray-400 font-sans">
-                            <span className="font-bold flex items-center gap-1 bg-[#27272a] px-2 py-0.5 rounded text-white text-[9px]">
-                              <span className="flex space-x-[-6px] select-none scale-75 shrink-0">
-                                <span className="w-2.5 h-2.5 rounded-full bg-[#eb001b]"></span>
-                                <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f00]"></span>
-                              </span>
+                          {/* Payment badge and method details */}
+                          <div className="flex items-center gap-2 text-[10px] text-gray-400 font-sans mt-0.5">
+                            <span className="font-bold flex items-center gap-1.5 bg-[#27272a] px-2 py-0.5 rounded text-white text-[9px] uppercase border border-zinc-700">
+                              <CreditCard size={11} className="text-[#d4af37]" />
                               {ord.payment_method}
                             </span>
-                            <span>Card used: •••• {ord.card_last4 || 'N/A'}</span>
+                            {ord.card_last4 && <span>(•••• {ord.card_last4})</span>}
                           </div>
                         </div>
 
@@ -398,11 +416,11 @@ export default function AdminDashboardPage() {
                                 ? 'text-emerald-400 border-emerald-900/60' 
                                 : ord.payment_status === 'Failed' || ord.payment_status === 'Cancelled'
                                 ? 'text-red-400 border-red-950'
-                                : 'text-yellow-405 border-yellow-900/60'
+                                : 'text-yellow-450 text-yellow-400 border-yellow-900/60'
                             }`}
                           >
                             <option value="Pending Payment" className="text-yellow-400 font-bold">Pending Payment</option>
-                            <option value="Paid" className="text-emerald-400 font-bold">Paid (Clearance)</option>
+                            <option value="Paid" className="text-emerald-400 font-bold">Paid (Cleared)</option>
                             <option value="Failed" className="text-red-400 font-bold">Failed</option>
                             <option value="Refunded" className="text-gray-400 font-bold">Refunded</option>
                             <option value="Cancelled" className="text-gray-400 font-bold">Cancelled</option>
@@ -412,32 +430,67 @@ export default function AdminDashboardPage() {
 
                       {/* Customer contact info */}
                       <div className="grid sm:grid-cols-2 gap-4 text-xs font-sans">
-                        <div className="space-y-1">
-                          <p className="text-gray-500 font-bold text-[10px] uppercase">Customer details</p>
+                        <div className="space-y-1 text-gray-300">
+                          <p className="text-gray-500 font-bold text-[10px] uppercase tracking-wider">Customer Profile</p>
                           <p className="text-white font-bold flex items-center gap-1.5"><User size={12} className="text-[#d4af37]" /> {ord.customer_name}</p>
-                          <p className="text-gray-400 font-mono">{ord.customer_email}</p>
+                          <p className="text-gray-400 font-mono text-[11px]">{ord.customer_email}</p>
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-gray-500 font-bold text-[10px] uppercase">Shipping Address</p>
+                        <div className="space-y-1 text-gray-300">
+                          <p className="text-gray-500 font-bold text-[10px] uppercase tracking-wider">Logistics Destination Address</p>
                           <p className="text-gray-400 leading-normal max-w-sm line-clamp-2">{ord.customer_address}</p>
                         </div>
                       </div>
 
-                      {/* Items details dropdown drawer */}
-                      <div className="bg-[#121214] border border-[#1f1f23] rounded-xl p-3 space-y-2">
-                        <p className="text-gray-500 font-bold text-[10px] uppercase">Items Ordered</p>
-                        <div className="space-y-1.5">
+                      {/* Items details / Logistics breakdown table representation */}
+                      <div className="bg-[#121214] border border-[#1f1f23] rounded-xl p-4.5 space-y-3">
+                        <div className="flex justify-between items-center border-b border-[#27272a] pb-2">
+                          <span className="text-gray-500 font-bold text-[10px] uppercase tracking-wider">Purchased Items Details</span>
+                          <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
+                            <Truck size={12} /> {ord.shipping_method || 'Normal'} Shipping
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
                           {itemsList.map((itm, idx) => (
                             <div key={idx} className="flex justify-between items-center text-xs text-gray-300">
                               <span className="font-semibold line-clamp-1">{itm.name} <span className="text-[10px] text-gray-500">×{itm.quantity}</span></span>
-                              <span className="font-mono text-white">${itm.price.toFixed(2)}</span>
+                              <span className="font-mono text-white">${(itm.price * itm.quantity).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
-                        <div className="border-t border-[#1f1f23] pt-2 flex justify-between items-center text-xs font-bold text-white mt-1">
-                          <span>Total Collected Volume</span>
-                          <span className="font-mono text-[#d4af37]">${ord.total.toFixed(2)}</span>
+
+                        {/* Financial Ledger Columns matching checkout rules */}
+                        <div className="border-t border-[#27272a]/70 pt-2.5 space-y-1.5 text-xs">
+                          <div className="flex justify-between text-gray-500">
+                            <span>Product Subtotal:</span>
+                            <span className="font-mono">${productSubtotal.toFixed(2)}</span>
+                          </div>
+                          
+                          {couponDiscount > 0 && (
+                            <div className="flex justify-between text-red-400 text-[11px]">
+                              <span className="flex items-center gap-1"><Tag size={11} /> Coupon Applied ({ord.coupon_code || 'WELCOME10'}):</span>
+                              <span className="font-mono">-${couponDiscount.toFixed(2)}</span>
+                            </div>
+                          )}
+
+                          {cryptoDiscount > 0 && (
+                            <div className="flex justify-between text-emerald-400 text-[11px]">
+                              <span className="flex items-center gap-1"><Coins size={11} /> Cryptocurrency Incentive (10%):</span>
+                              <span className="font-mono">-${cryptoDiscount.toFixed(2)}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-between text-gray-500">
+                            <span>Logistics Fee ({ord.shipping_method || 'Normal'}):</span>
+                            <span className="font-mono">${shippingCost.toFixed(2)}</span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-white border-t border-[#1f1f23] pt-2 font-bold mt-1">
+                            <span>Grand Total Ledger:</span>
+                            <span className="font-mono text-[#d4af37] text-sm">${ord.total.toFixed(2)}</span>
+                          </div>
                         </div>
+
                       </div>
 
                       {/* Administrative triggers actions line */}
@@ -447,15 +500,15 @@ export default function AdminDashboardPage() {
                         <button
                           onClick={() => handleResendInstructions(ord.id)}
                           disabled={activeResendingId === ord.id}
-                          className="px-3 py-1.5 bg-[#121214] hover:bg-[#27272a] text-[#d4af37] hover:text-white border border-[#27272a] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-bold uppercase tracking-wider"
+                          className="px-3 py-1.5 bg-[#121214] hover:bg-[#27272a] text-[#d4af37] hover:text-white border border-[#27272a] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-bold uppercase tracking-wider text-[9px]"
                         >
                           {activeResendingId === ord.id ? (
                             <>
-                              <RefreshCw size={11} className="animate-spin" /> Dispatching...
+                              <RefreshCw size={11} className="animate-spin" /> Transmitting...
                             </>
                           ) : (
                             <>
-                              <Mail size={11} /> Resend Instructions
+                              <Mail size={11} /> Resend Details & Invoice
                             </>
                           )}
                         </button>
@@ -473,39 +526,38 @@ export default function AdminDashboardPage() {
             <div>
               <span className="text-[9px] uppercase font-bold tracking-widest text-[#d4af37] block">VIRTUAL DISPATCH LOGGER</span>
               <h3 className="text-base font-bold text-white flex items-center gap-2 mt-1">
-                <Mail size={16} className="text-[#d4af37]" /> Mail Logs Feed
+                <Mail size={16} className="text-[#d4af37]" /> SMTP Mail Logs Feed
               </h3>
               <p className="text-[11px] text-gray-400 leading-normal mt-1.5 font-sans">
-                Real-time tracking of Mastercard payment instruction email triggers:
+                Real-time SMTP dispatch log showing full-packet invoice transmissions:
               </p>
             </div>
 
             {emailLogs.length === 0 ? (
               <div className="py-12 text-center text-gray-500 border border-dashed border-[#1f1f23] rounded-2xl p-4 text-xs font-medium font-sans">
-                <p>No dispatch tasks scheduled yet.</p>
-                <p className="text-[10px] text-gray-650 mt-1">Submit checkouts or trigger Resends from log entries to record mail notifications.</p>
+                <p>No dispatch tasks logged in database.</p>
+                <p className="text-[10px] text-gray-600 mt-1">Place checkouts or trigger Resends from log entries to populate logs.</p>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
+              <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
                 {emailLogs.map((log) => (
-                  <div key={log.id} className="bg-[#18181c] border border-[#27272a] rounded-xl p-3 text-xs space-y-1.5">
+                  <div key={log.id} className="bg-[#18181c] border border-[#27272a] rounded-xl p-3 text-xs space-y-1.5 animate-fadeIn">
                     <div className="flex justify-between items-center text-[9px] font-mono text-gray-500">
-                      <span>Log Ref: {log.id.slice(0, 10).toUpperCase()}</span>
+                      <span>Ref Log: {log.id.slice(0, 10).toUpperCase()}</span>
                       <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
                     </div>
                     <div>
                       <p className="text-gray-400 text-[10px]"><span className="font-bold text-gray-500">Sent To:</span> {log.customerEmail}</p>
                       <p className="text-white font-bold text-[10px] mt-0.5 leading-snug">{log.subject}</p>
                     </div>
-                    <div className="bg-[#09090b] text-[10px] text-[#d4af37] p-2 rounded-lg border border-[#1d1d21] font-mono leading-relaxed line-clamp-3">
-                      &quot;Thank you for your order. Mastercard payment instructions have been sent for Order #{log.orderId.substring(0, 8).toUpperCase()}. Please follow the instructions provided to complete payment...&quot;
+                    <div className="bg-[#09090b] text-[10px] text-gray-400 p-2 rounded-lg border border-[#1d1d21] font-mono leading-relaxed leading-normal">
+                      &quot;Full-packet transactional receipt dispatched safely. Attached fully formatted Invoice.pdf invoice document.&quot;
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </aside>
-
         </div>
 
       </div>

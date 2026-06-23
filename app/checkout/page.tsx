@@ -16,7 +16,14 @@ import {
   Check,
   Ban,
   HelpCircle,
-  ShieldCheck
+  ShieldCheck,
+  Plus,
+  Tag,
+  Coins,
+  DollarSign,
+  Smartphone,
+  Truck,
+  CheckSquare
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -32,7 +39,7 @@ interface CartItem {
 export default function CheckoutPage() {
   const router = useRouter();
   
-  // Lazy state initializers to avoid cascading renders inside useEffect
+  // Lazy state initializers to avoid cascading renders
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     if (typeof window !== 'undefined') {
       return [...cartStore.getItems()];
@@ -51,12 +58,31 @@ export default function CheckoutPage() {
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [country, setCountry] = useState('United States');
 
-  // Credit Card details state
+  // Shipping Method state
+  const [shippingMethod, setShippingMethod] = useState<'Normal' | 'Express' | 'Overnight' | null>(null);
+
+  // Payment Method Polymorphism state
+  const [paymentMethod, setPaymentMethod] = useState<'Credit Card' | 'Cryptocurrency' | 'Apple Cash' | 'Chime'>('Credit Card');
+  const [cryptoCurrency, setCryptoCurrency] = useState<'Bitcoin' | 'USDT' | 'USDC' | 'Ethereum'>('Bitcoin');
+
+  // Credit Card details state (optional based on method, only evaluated on Credit Card chosen)
   const [cardholderName, setCardholderName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
+
+  // Coupon management state
+  const [couponCodeInput, setCouponCodeInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [couponDiscountPercent, setCouponDiscountPercent] = useState(0);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+
+  // Order Review confirmation checkbox
+  const [isReviewedAndConfirmed, setIsReviewedAndConfirmed] = useState(false);
 
   // UI interaction state managers
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,7 +93,6 @@ export default function CheckoutPage() {
 
   // Initialize and load the cart store items + fetch active payment settings
   useEffect(() => {
-    // Check if Mastercard payments are active
     fetch('/api/admin/orders')
       .then(res => res.json())
       .then(data => {
@@ -96,8 +121,24 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  // Calculate items total
+  // Recalculation math:
   const subtotal = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
+  // 1. Coupon Discount Calculation
+  const couponDiscountAmount = appliedCoupon ? Number((subtotal * (couponDiscountPercent / 100)).toFixed(2)) : 0;
+
+  // 2. Crypto Discount Calculation (10% crypto discount applied after coupon deduction)
+  const isCryptoSelected = paymentMethod === 'Cryptocurrency';
+  const cryptoDiscountAmount = isCryptoSelected ? Number(((subtotal - couponDiscountAmount) * 0.1).toFixed(2)) : 0;
+
+  // 3. Shipping Fee calculation
+  let shippingCost = 0;
+  if (shippingMethod === 'Normal') shippingCost = 20;
+  if (shippingMethod === 'Express') shippingCost = 35;
+  if (shippingMethod === 'Overnight') shippingCost = 60;
+
+  // 4. Final grand total
+  const finalTotal = subtotal - couponDiscountAmount - cryptoDiscountAmount + shippingCost;
 
   // Custom credit card field spacing formatter
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,7 +146,6 @@ export default function CheckoutPage() {
     if (value.length > 16) {
       value = value.slice(0, 16);
     }
-    // Add space groups every 4 digits
     const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ');
     setCardNumber(formatted);
   };
@@ -129,7 +169,52 @@ export default function CheckoutPage() {
     }
   };
 
-  // Form handle submit with robust Mastercard validation
+  // Coupon validation async caller
+  const handleApplyCoupon = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setCouponError(null);
+    setCouponSuccess(null);
+
+    const inputCode = couponCodeInput.trim().toUpperCase();
+    if (!inputCode) {
+      setCouponError('Please enter a coupon code.');
+      return;
+    }
+
+    if (!email.trim() || !email.includes('@')) {
+      setCouponError('Please specify your billing email address below before applying first-time discount.');
+      return;
+    }
+
+    setIsValidatingCoupon(true);
+
+    try {
+      const response = await fetch('/api/validate-coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), couponCode: inputCode })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setAppliedCoupon(inputCode);
+        setCouponDiscountPercent(data.discount_percentage);
+        setCouponSuccess(data.message || '10% coupon applied!');
+      } else {
+        setCouponError(data.error || 'Invalid coupon.');
+        setAppliedCoupon(null);
+        setCouponDiscountPercent(0);
+      }
+    } catch (err) {
+      console.error('Coupon request server communication error:', err);
+      setCouponError('Server connection issue validating coupon. Please try again.');
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  // Form handle submit
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -139,50 +224,62 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (!isGatewayEnabled) {
-      setError('Mastercard checkout processing is temporarily offline. Please clear your cart or try again later.');
+    // 1. Check shipping selection
+    if (!shippingMethod) {
+      setError('Please select a Shipping Method before placing your order.');
       return;
     }
 
-    // 1. Ship details verification
-    if (!name.trim() || !email.trim() || !streetAddress.trim() || !city.trim() || !state.trim() || !zipCode.trim()) {
-      setError('Please fill in all shipping fields correctly.');
+    // 2. Shipping Destination details verification
+    if (!name.trim() || !email.trim() || !streetAddress.trim() || !city.trim() || !state.trim() || !zipCode.trim() || !country.trim()) {
+      setError('Please enter complete shipping contact and recipient destination details.');
       return;
     }
 
-    // 2. Card details verification
-    if (!cardholderName.trim()) {
-      setError('Please enter the name printed on the card.');
-      return;
+    // 3. Conditional Credit Card credentials verification
+    let unspacedCardNumber = '';
+    if (paymentMethod === 'Credit Card') {
+      if (!isGatewayEnabled) {
+        setError('Mastercard checkout processing is temporarily offline. Please select another payment method.');
+        return;
+      }
+
+      if (!cardholderName.trim()) {
+        setError('Please enter the cardholder credit name.');
+        return;
+      }
+
+      unspacedCardNumber = cardNumber.replace(/\s|-/g, '');
+      if (!unspacedCardNumber || unspacedCardNumber.length !== 16) {
+        setError('Please enter a valid 16-digit credit card number.');
+        return;
+      }
+
+      if (expiry.length < 5) {
+        setError('Please enter your card expiration date (MM/YY).');
+        return;
+      }
+
+      if (cvv.length < 3) {
+        setError('Please enter a valid card CVV security code.');
+        return;
+      }
+
+      if (!isMastercard(unspacedCardNumber)) {
+        setError('Only Mastercard payments are currently accepted. Please use a Mastercard or select another payment method.');
+        return;
+      }
     }
 
-    const unspacedCardNumber = cardNumber.replace(/\s|-/g, '');
-    if (!unspacedCardNumber || unspacedCardNumber.length !== 16) {
-      setError('Please enter a valid 16-digit credit card number.');
-      return;
-    }
-
-    if (expiry.length < 5) {
-      setError('Please enter your card expiration date (MM/YY).');
-      return;
-    }
-
-    if (cvv.length < 3) {
-      setError('Please enter a valid card CVV security code.');
-      return;
-    }
-
-    // 3. Strict Mastercard Check
-    if (!isMastercard(unspacedCardNumber)) {
-      setError('Only Mastercard payments are currently accepted. Please use a Mastercard or select another payment method.');
+    // 4. Force review confirmation
+    if (!isReviewedAndConfirmed) {
+      setError('Please review your order details below and check the confirmation box before placing your order.');
       return;
     }
 
     setIsSubmitting(true);
 
     const fullAddress = `${streetAddress}, ${city}, ${state} ${zipCode}`;
-
-    // Assemble clean standard payload structure
     const payload = {
       items: cartItems.map(item => ({
         id: item.id,
@@ -190,42 +287,40 @@ export default function CheckoutPage() {
         price: Number(item.price),
         quantity: Number(item.quantity)
       })),
-      total: Number(subtotal),
       customer: {
         name: name.trim(),
         email: email.trim(),
-        address: fullAddress.trim()
+        address: fullAddress.trim(),
+        country: country.trim()
       },
-      payment_method: 'Mastercard',
-      card_number: unspacedCardNumber
+      shipping_method: shippingMethod,
+      payment_method: paymentMethod === 'Cryptocurrency' ? `Cryptocurrency (${cryptoCurrency})` : paymentMethod,
+      coupon_code: appliedCoupon,
+      card_number: paymentMethod === 'Credit Card' ? unspacedCardNumber : null
     };
 
     try {
       const response = await fetch('/api/create-order', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       const data = await response.json();
 
       if (response.ok && data.success === true) {
-        // Clear client checkout cart 
         cartStore.clearCart();
         try {
           localStorage.removeItem('boutiq_cart');
         } catch (err) {}
         
-        // Successful redirect
         router.push(`/success?orderId=${data.orderId}`);
       } else {
-        setError(data.error || 'Check out failed. Verify inputs and try again.');
+        setError(data.error || 'Checkout transaction failed. Verify details and try again.');
       }
     } catch (err: any) {
-      console.error('Checkout fetch transmission crash:', err);
-      setError('Network communication issue placing order. Please check connections.');
+      console.error('Checkout fetch transmission exception:', err);
+      setError('Server communication issue placing order. Please check connections.');
     } finally {
       setIsSubmitting(false);
     }
@@ -256,14 +351,13 @@ export default function CheckoutPage() {
         <div className="border-b border-[#1f1f23] pb-6 mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <span className="text-xs bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 px-3 py-1 rounded-full font-bold uppercase tracking-widest">
-              Secure Gateway
+              Secure Distribution Gateway
             </span>
             <h1 className="text-3xl md:text-4xl font-bold font-sans tracking-tight text-white mt-2">
-              Order Checkout
+              Order Checkout Portal
             </h1>
           </div>
 
-          {/* Secure Trust badging */}
           <div className="flex items-center gap-4 bg-[#121214] border border-[#1f1f23] px-4 py-2.5 rounded-2xl">
             <ShieldCheck className="text-emerald-400 w-5 h-5 shrink-0" />
             <div className="text-left">
@@ -273,33 +367,22 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_420px] gap-12 items-start" id="checkout-layout-grid">
+        <div className="grid lg:grid-cols-[1fr_450px] gap-12 items-start" id="checkout-layout-grid-custom">
           
           {/* Main User Form Fields */}
           <div className="space-y-8">
-            <form onSubmit={handlePlaceOrder} className="space-y-8" id="checkout-form">
+            <form onSubmit={handlePlaceOrder} className="space-y-8" id="checkout-form-custom">
               
               {/* Submission error feedback banner */}
               {error && (
-                <div className="bg-red-950/40 border border-red-800 text-red-300 rounded-2xl p-5 text-sm font-medium flex items-start gap-3 animate-headshake">
+                <div className="bg-red-950/40 border border-red-800 text-red-300 rounded-2xl p-5 text-sm font-medium flex items-start gap-3 animate-headshake" id="error-alert">
                   <AlertCircle size={20} className="shrink-0 text-red-500 mt-0.5" />
                   <span className="leading-relaxed">{error}</span>
                 </div>
               )}
 
-              {/* Toggle offline warning */}
-              {!isGatewayEnabled && (
-                <div className="bg-yellow-950/30 border border-yellow-800 text-yellow-400 rounded-2xl p-5 text-sm font-medium flex items-start gap-3">
-                  <Ban size={20} className="shrink-0 text-yellow-500 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-bold">Gateway Processing Paused</p>
-                    <p className="text-xs text-gray-400">Mastercard payments are temporarily toggled off by the shop administrator. Checkouts are paused.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* 1. SHIPPING INFO SECTION */}
-              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-6">
+              {/* 1. SHIPPING DESTINATION INFO */}
+              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-6" id="sec-shipping-destination">
                 <div className="flex items-center justify-between border-b border-[#1f1f23] pb-4">
                   <h2 className="text-lg font-bold flex items-center gap-2 text-white">
                     <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#d4af37]/10 text-[#d4af37] text-xs font-mono font-bold">1</span>
@@ -315,11 +398,10 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         required
-                        disabled={!isGatewayEnabled}
                         placeholder="Johnathan Doe"
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
                       />
                     </div>
 
@@ -328,26 +410,38 @@ export default function CheckoutPage() {
                       <input
                         type="email"
                         required
-                        disabled={!isGatewayEnabled}
                         placeholder="john@example.com"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400">Street Address *</label>
-                    <input
-                      type="text"
-                      required
-                      disabled={!isGatewayEnabled}
-                      placeholder="123 Main St, Apt 4B"
-                      value={streetAddress}
-                      onChange={e => setStreetAddress(e.target.value)}
-                      className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
-                    />
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-400">Street Address *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="123 Main St, Apt 4B"
+                        value={streetAddress}
+                        onChange={e => setStreetAddress(e.target.value)}
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-gray-400">Country *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="United States"
+                        value={country}
+                        onChange={e => setCountry(e.target.value)}
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -356,11 +450,10 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         required
-                        disabled={!isGatewayEnabled}
                         placeholder="Los Angeles"
                         value={city}
                         onChange={e => setCity(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
                       />
                     </div>
 
@@ -369,11 +462,10 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         required
-                        disabled={!isGatewayEnabled}
                         placeholder="CA"
                         value={state}
                         onChange={e => setState(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
                       />
                     </div>
 
@@ -382,161 +474,389 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         required
-                        disabled={!isGatewayEnabled}
                         placeholder="90001"
                         value={zipCode}
                         onChange={e => setZipCode(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all"
                       />
                     </div>
                   </div>
                 </div>
               </section>
 
-              {/* 2. PAYMENT METHODS SECTION (MASTERCARD ONLY EXCLUSIVELY) */}
-              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#1f1f23] pb-4 gap-3">
+              {/* 2. SHIPPING METHOD SELECTION */}
+              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-6" id="sec-shipping-method">
+                <div className="border-b border-[#1f1f23] pb-4 flex justify-between items-center">
                   <h2 className="text-lg font-bold flex items-center gap-2 text-white">
                     <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#d4af37]/10 text-[#d4af37] text-xs font-mono font-bold">2</span>
-                    Payment Details
+                    Shipping Logistics *
                   </h2>
-                  
-                  {/* Mastercard Active Badge */}
-                  <div className="flex items-center gap-1 bg-[#d4af37]/10 border border-[#d4af37]/30 px-3 py-1 rounded-full text-[10px] text-[#d4af37] font-bold">
-                    <Check size={12} /> MASTERCARD ONLY ACCEPTED
-                  </div>
+                  <span className="text-xs text-[#d4af37] font-semibold">Select Priority</span>
                 </div>
 
-                {/* Important Mastercard restrict instructions banner */}
-                <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 space-y-3">
-                  <div className="flex gap-4">
-                    {/* Live styled MC interlocking circles logo */}
-                    <div className="shrink-0 flex items-center space-x-[-12px] h-10 select-none px-2 bg-[#09090b] rounded-lg border border-[#1d1d21]">
-                      <div className="w-6 h-6 rounded-full bg-[#eb001b] opacity-95"></div>
-                      <div className="w-6 h-6 rounded-full bg-[#ff5f00] opacity-90"></div>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-white uppercase tracking-wider">Mastercard Accepted Gateway</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        &quot;Mastercard payments are accepted. Payment instructions will be emailed immediately after your order is submitted.&quot;
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Accepted vs Rejected visualizing matrices */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#14231b] border border-emerald-950 rounded-2xl p-4">
-                    <h5 className="text-[11px] font-bold text-emerald-400 tracking-wider uppercase mb-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Accepted Type
-                    </h5>
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex items-center space-x-[-10px] select-none">
-                        <div className="w-5 h-5 rounded-full bg-[#eb001b]"></div>
-                        <div className="w-5 h-5 rounded-full bg-[#ff5f00]"></div>
+                <div className="grid md:grid-cols-3 gap-4" id="shipping-priority-selection">
+                  {[
+                    { key: 'Normal', title: 'Normal Shipping', time: '3–5 Business Days', fee: 20 },
+                    { key: 'Express', title: 'Express Shipping', time: '48 Hours', fee: 35 },
+                    { key: 'Overnight', title: 'Overnight Shipping', time: '24 Hours', fee: 60 }
+                  ].map((option) => (
+                    <div 
+                      key={option.key}
+                      onClick={() => setShippingMethod(option.key as any)}
+                      className={`border rounded-2xl p-4 flex flex-col justify-between cursor-pointer transition-all hover:bg-[#18181c] ${
+                        shippingMethod === option.key 
+                          ? 'border-[#d4af37] bg-[#d4af37]/5' 
+                          : 'border-[#27272a] bg-[#121214]'
+                      }`}
+                      id={`ship-option-${option.key}`}
+                    >
+                      <div>
+                        <p className="text-sm font-bold text-white mb-1 flex justify-between items-center">
+                          <span>{option.title}</span>
+                          {shippingMethod === option.key && <CheckCircle2 size={16} className="text-[#d4af37]" />}
+                        </p>
+                        <p className="text-xs text-gray-400 font-medium flex items-center gap-1 mt-1">
+                          <Truck size={12} /> {option.time}
+                        </p>
                       </div>
-                      <span className="text-xs font-bold text-white">Mastercard</span>
+                      <div className="mt-4 pt-3 border-t border-[#1f1f23] flex justify-between items-baseline">
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Estimated Fee</span>
+                        <span className="text-sm font-mono font-bold text-[#d4af37]">+${option.fee}</span>
+                      </div>
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </section>
 
-                  <div className="bg-[#241315]/80 border border-red-950 rounded-2xl p-4">
-                    <h5 className="text-[11px] font-bold text-red-400 tracking-wider uppercase mb-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span> Strictly Not Accepted
-                    </h5>
-                    <div className="flex flex-wrap gap-2 items-center text-gray-500 text-[10px]">
-                      <span className="line-through decoration-[#eb001b] decoration-2 font-semibold">Visa</span>
-                      <span>•</span>
-                      <span className="line-through decoration-[#eb001b] decoration-2 font-semibold">Amex</span>
-                      <span>•</span>
-                      <span className="line-through decoration-[#eb001b] decoration-2 font-semibold">Discover</span>
-                    </div>
-                  </div>
+              {/* 3. POLYMORPHIC PAYMENT METHOD SELECTOR */}
+              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-6" id="sec-payment-method">
+                <div className="border-b border-[#1f1f23] pb-4 flex justify-between items-center">
+                  <h2 className="text-lg font-bold flex items-center gap-2 text-white">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#d4af37]/10 text-[#d4af37] text-xs font-mono font-bold">3</span>
+                    Pre-authorization Method
+                  </h2>
+                  <span className="text-[10px] text-gray-500 font-bold">VERIFICATION CODES SENT DIRECTLY</span>
                 </div>
 
-                {/* Secure Card input schema */}
-                <div className="space-y-4">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-400">Cardholder Name *</label>
-                      <input
-                        type="text"
-                        required
-                        disabled={!isGatewayEnabled}
-                        placeholder="Johnathan R Doe"
-                        value={cardholderName}
-                        onChange={e => setCardholderName(e.target.value)}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40 duration-155"
-                      />
-                    </div>
+                {/* Main method tabs */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#09090b] p-1.5 rounded-2xl border border-[#1f1f23]">
+                  {[
+                    { key: 'Credit Card', label: 'Credit Card', icon: CreditCard },
+                    { key: 'Cryptocurrency', label: 'Crypto', icon: Coins },
+                    { key: 'Apple Cash', label: 'Apple Cash', icon: Smartphone },
+                    { key: 'Chime', label: 'Chime', icon: DollarSign }
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod(item.key as any);
+                          setError(null);
+                        }}
+                        className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          paymentMethod === item.key 
+                            ? 'bg-[#d4af37] text-black shadow-md' 
+                            : 'text-gray-400 hover:text-white hover:bg-[#121214]'
+                        }`}
+                      >
+                        <Icon size={14} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-400 flex justify-between items-center">
-                        <span>Card Number *</span>
-                        {detectedCard !== 'Unknown' && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                            detectedCard === 'Mastercard' ? 'bg-[#ff5f00]/15 text-white border border-[#ff5f00]/30' : 'bg-red-950 text-red-400 border border-red-800'
-                          }`}>
-                            {detectedCard}
-                          </span>
-                        )}
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          required
-                          disabled={!isGatewayEnabled}
-                          placeholder="5123 4567 8901 2345"
-                          value={cardNumber}
-                          onChange={handleCardNumberChange}
-                          className={`w-full bg-[#18181c] border rounded-xl p-3.5 pl-11 outline-none text-white text-sm focus:bg-[#1f1f24] transition-all disabled:opacity-40 duration-155 ${
-                            cardNumber.length > 0 && detectedCard !== 'Mastercard' && detectedCard !== 'Unknown'
-                              ? 'border-red-600 focus:border-red-500'
-                              : 'border-[#27272a] focus:border-[#d4af37]'
-                          }`}
-                        />
-                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500">
-                          {detectedCard === 'Mastercard' ? (
-                            <div className="flex space-x-[-10px] select-none scale-90">
-                              <div className="w-5 h-5 rounded-full bg-[#eb001b]"></div>
-                              <div className="w-5 h-5 rounded-full bg-[#ff5f00]"></div>
+                {/* Sub-content structures */}
+                <div className="space-y-4">
+                  {paymentMethod === 'Credit Card' && (
+                    <div className="space-y-4 animate-fadeIn">
+                      <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 space-y-3">
+                        <div className="flex gap-4">
+                          <div className="shrink-0 flex items-center space-x-[-12px] h-10 select-none px-2 bg-[#09090b] rounded-lg border border-[#1d1d21]">
+                            <div className="w-6 h-6 rounded-full bg-[#eb001b] opacity-95"></div>
+                            <div className="w-6 h-6 rounded-full bg-[#ff5f00] opacity-90"></div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white uppercase tracking-wider">Mastercard Accepted Gateway</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              &quot;Secure credit card payment instructions will be emailed immediately after your order is submitted.&quot;
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card credentials input schema */}
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-400">Cardholder Name *</label>
+                          <input
+                            type="text"
+                            required={paymentMethod === 'Credit Card'}
+                            disabled={!isGatewayEnabled}
+                            placeholder="Johnathan R Doe"
+                            value={cardholderName}
+                            onChange={e => setCardholderName(e.target.value)}
+                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-400 flex justify-between items-center">
+                            <span>Card Number *</span>
+                            {detectedCard !== 'Unknown' && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                                detectedCard === 'Mastercard' ? 'bg-[#ff5f00]/15 text-white border border-[#ff5f00]/30' : 'bg-red-950 text-red-400 border border-red-800'
+                              }`}>
+                                {detectedCard}
+                              </span>
+                            )}
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              required={paymentMethod === 'Credit Card'}
+                              disabled={!isGatewayEnabled}
+                              placeholder="5123 4567 8901 2345"
+                              value={cardNumber}
+                              onChange={handleCardNumberChange}
+                              className={`w-full bg-[#18181c] border rounded-xl p-3.5 pl-11 outline-none text-white text-sm focus:bg-[#1f1f24] transition-all disabled:opacity-40 ${
+                                cardNumber.length > 0 && detectedCard !== 'Mastercard' && detectedCard !== 'Unknown'
+                                  ? 'border-red-600 focus:border-red-500'
+                                  : 'border-[#27272a] focus:border-[#d4af37]'
+                              }`}
+                            />
+                            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500">
+                              {detectedCard === 'Mastercard' ? (
+                                <div className="flex space-x-[-10px] select-none scale-90">
+                                  <div className="w-5 h-5 rounded-full bg-[#eb001b]"></div>
+                                  <div className="w-5 h-5 rounded-full bg-[#ff5f00]"></div>
+                                </div>
+                              ) : (
+                                <CreditCard size={18} />
+                              )}
                             </div>
-                          ) : (
-                            <CreditCard size={18} />
-                          )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-400">Expiration Date *</label>
+                          <input
+                            type="text"
+                            required={paymentMethod === 'Credit Card'}
+                            disabled={!isGatewayEnabled}
+                            placeholder="MM/YY"
+                            value={expiry}
+                            onChange={handleExpiryChange}
+                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-400 flex items-center justify-between">
+                            <span>CVV / CVC *</span>
+                            <span title="3 or 4-digit code located on back of card"><HelpCircle size={12} className="text-gray-500" /></span>
+                          </label>
+                          <input
+                            type="password"
+                            required={paymentMethod === 'Credit Card'}
+                            disabled={!isGatewayEnabled}
+                            placeholder="•••"
+                            value={cvv}
+                            onChange={handleCvvChange}
+                            className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40 font-mono"
+                          />
                         </div>
                       </div>
                     </div>
+                  )}
+
+                  {paymentMethod === 'Cryptocurrency' && (
+                    <div className="space-y-4 bg-[#18181c] border border-[#27272a] rounded-2xl p-5 md:p-6 animate-fadeIn">
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-[#d4af37] uppercase tracking-wider flex items-center gap-1.5">
+                          <Coins className="w-4 h-4" /> 10% Crypto Discount Applied!
+                        </p>
+                        <p className="text-xs text-gray-300">
+                          &quot;Payment instructions and wallet details will be emailed immediately after your order is submitted.&quot;
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 pt-3 border-t border-[#27272a]">
+                        <label className="text-xs font-bold text-gray-400">Choose preferred crypto payment token *</label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {[
+                            { key: 'Bitcoin', label: 'Bitcoin' },
+                            { key: 'USDT', label: 'USDT (ERC20)' },
+                            { key: 'USDC', label: 'USDC (ERC20)' },
+                            { key: 'Ethereum', label: 'Ethereum' }
+                          ].map((token) => (
+                            <button
+                              key={token.key}
+                              type="button"
+                              onClick={() => setCryptoCurrency(token.key as any)}
+                              className={`py-2 px-1 text-xs font-bold border rounded-xl transition-all ${
+                                cryptoCurrency === token.key
+                                  ? 'border-[#d4af37] bg-[#d4af37]/10 text-white'
+                                  : 'border-[#27272a] bg-[#121214] text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {token.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentMethod === 'Apple Cash' && (
+                    <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 md:p-6 space-y-2 animate-fadeIn">
+                      <p className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <Smartphone size={16} className="text-[#d4af37]" /> Apple Cash Delivery
+                      </p>
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        &quot;Apple Cash payment instructions will be emailed immediately after your order is submitted.&quot;
+                      </p>
+                    </div>
+                  )}
+
+                  {paymentMethod === 'Chime' && (
+                    <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-5 md:p-6 space-y-2 animate-fadeIn">
+                      <p className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <DollarSign size={16} className="text-[#d4af37]" /> Chime Immediate Hold
+                      </p>
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        &quot;Chime payment instructions will be emailed immediately after your order is submitted.&quot;
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* 4. COUPON CODE LOGIC FORM */}
+              <section className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 md:p-8 space-y-4" id="sec-coupon">
+                <div className="flex items-center gap-2 text-white border-b border-[#1f1f23] pb-3">
+                  <Tag className="text-[#d4af37]" size={18} />
+                  <h3 className="text-sm font-bold uppercase tracking-wider">Have a coupon code?</h3>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    disabled={isValidatingCoupon}
+                    placeholder="e.g. WELCOME10"
+                    value={couponCodeInput}
+                    onChange={(e) => setCouponCodeInput(e.target.value)}
+                    className="bg-[#18181c] border border-[#27272a] rounded-xl outline-none text-white text-xs px-3 py-2 focus:border-[#d4af37] flex-1 font-mono uppercase"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={isValidatingCoupon || !email.trim()}
+                    className="bg-[#27272a] hover:bg-[#323236] text-white text-xs font-bold px-4 py-2 rounded-xl transition-all disabled:opacity-30 select-none cursor-pointer"
+                  >
+                    {isValidatingCoupon ? <RefreshCw className="animate-spin w-4 h-4 inline" /> : 'Apply Coupon'}
+                  </button>
+                </div>
+
+                {!email.trim() && (
+                  <p className="text-[10px] text-gray-500">
+                    * Please specify your email under shipping destination first to unlock verification.
+                  </p>
+                )}
+
+                {couponError && <p className="text-xs text-red-400 font-medium" id="coupon-error-notice">{couponError}</p>}
+                {couponSuccess && <p className="text-xs text-emerald-400 font-semibold" id="coupon-success-notice">{couponSuccess}</p>}
+              </section>
+
+              {/* 5. CHECKOUT REVIEW SECTION */}
+              <section className="bg-[#121214] border border-[#d4af37]/30 rounded-3xl p-6 md:p-8 space-y-6" id="sec-checkout-review">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-white border-b border-[#1f1f23] pb-4">
+                  <CheckSquare className="text-[#d4af37]" size={18} />
+                  Checkout Review & Verify
+                </h2>
+
+                <div className="grid md:grid-cols-2 gap-6 text-xs text-gray-300">
+                  <div className="space-y-3 bg-[#18181c] p-4 rounded-2xl border border-[#27272a]">
+                    <h4 className="font-bold text-white border-b border-[#27272a] pb-1 uppercase tracking-wider text-[10px]">Customer Information</h4>
+                    <p><strong>Name:</strong> {name || <span className="text-red-500 font-bold">Unentered</span>}</p>
+                    <p><strong>Email ID:</strong> {email || <span className="text-red-500 font-bold">Unentered</span>}</p>
+                    <p><strong>Country:</strong> {country}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-400">Expiration Date *</label>
-                      <input
-                        type="text"
-                        required
-                        disabled={!isGatewayEnabled}
-                        placeholder="MM/YY"
-                        value={expiry}
-                        onChange={handleExpiryChange}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40"
-                      />
-                    </div>
+                  <div className="space-y-3 bg-[#18181c] p-4 rounded-2xl border border-[#27272a]">
+                    <h4 className="font-bold text-white border-b border-[#27272a] pb-1 uppercase tracking-wider text-[10px]">Logistics & Payments</h4>
+                    <p><strong>Shipping:</strong> {shippingMethod ? `${shippingMethod} Shipping` : <span className="text-red-500 font-bold">Unselected</span>}</p>
+                    <p><strong>Payment Choice:</strong> {paymentMethod === 'Cryptocurrency' ? `Cryptocurrency (${cryptoCurrency})` : paymentMethod}</p>
+                  </div>
+                </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-400 flex items-center justify-between">
-                        <span>CVV / CVC *</span>
-                        <span title="3 or 4-digit code located on back of card"><HelpCircle size={12} className="text-gray-500 cursor-help" /></span>
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        disabled={!isGatewayEnabled}
-                        placeholder="•••"
-                        value={cvv}
-                        onChange={handleCvvChange}
-                        className="w-full bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 outline-none text-white text-sm focus:border-[#d4af37] focus:bg-[#1f1f24] transition-all disabled:opacity-40 font-mono"
-                      />
+                {streetAddress && city && state && zipCode && (
+                  <div className="bg-[#18181c] p-4 rounded-2xl border border-[#27272a] text-xs space-y-1">
+                    <span className="font-bold text-[10px] text-gray-400 uppercase tracking-wider">Shipping Destination Address</span>
+                    <p className="text-white font-medium">{streetAddress}, {city}, {state} {zipCode}</p>
+                  </div>
+                )}
+
+                {/* Items preview list */}
+                <div className="border-t border-[#1f1f23] pt-4">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-3">Products Ordered Details</span>
+                  <div className="space-y-2">
+                    {cartItems.map((item) => (
+                      <div key={`${item.id}-${item.variant || ''}`} className="flex justify-between items-center text-xs text-gray-300">
+                        <span>{item.name} {item.variant ? `(${item.variant})` : ''} <strong className="text-white">x{item.quantity}</strong></span>
+                        <span className="font-mono font-bold">${(item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dynamic review summary of fees */}
+                <div className="border-t border-[#1f1f23] pt-4 space-y-2 text-xs">
+                  <div className="flex justify-between text-gray-400">
+                    <span>Product Subtotal</span>
+                    <span className="font-mono font-bold text-white">${subtotal.toFixed(2)}</span>
+                  </div>
+                  {appliedCoupon && (
+                    <div className="flex justify-between text-red-400">
+                      <span>Coupon Discount [WELCOME10 - 10%]</span>
+                      <span className="font-mono font-bold">-${couponDiscountAmount.toFixed(2)}</span>
                     </div>
+                  )}
+                  {isCryptoSelected && (
+                    <div className="flex justify-between text-emerald-400">
+                      <span>Crypto Discount [10%]</span>
+                      <span className="font-mono font-bold">-${cryptoDiscountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {shippingMethod && (
+                    <div className="flex justify-between text-gray-400">
+                      <span>Shipping Logistics Fee</span>
+                      <span className="font-mono font-bold text-white">${shippingCost.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-baseline pt-2 border-t border-[#1f1f23] text-sm text-white font-bold">
+                    <span>Grand Total</span>
+                    <span className="text-lg font-mono text-[#d4af37]">${finalTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Confirm checkbox */}
+                <div className="bg-[#1c1c20] border border-[#27272a] rounded-2xl p-4 flex gap-3 items-start select-none cursor-pointer" onClick={() => setIsReviewedAndConfirmed(!isReviewedAndConfirmed)}>
+                  <input
+                    type="checkbox"
+                    required
+                    checked={isReviewedAndConfirmed}
+                    onChange={(e) => setIsReviewedAndConfirmed(e.target.checked)}
+                    className="w-4.5 h-4.5 accent-[#d4af37] border-2 border-zinc-700 rounded bg-[#18181c] cursor-pointer mt-0.5 shrink-0"
+                    id="confirm-checkout-checkbox"
+                  />
+                  <div className="text-xs text-gray-300">
+                    <p className="font-bold text-white">Review Confirmation *</p>
+                    <p className="text-[11px] text-gray-400 leading-relaxed mt-0.5">I confirm that all recipient details, shipping options, and payment methods are accurate. I understand that secure payment instructions will be generated and emailed immediately after submission.</p>
                   </div>
                 </div>
               </section>
@@ -545,7 +865,7 @@ export default function CheckoutPage() {
           </div>
 
           {/* Cart aggregate summary sidebar panel */}
-          <div className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 space-y-6" id="cart-summary-sidebar">
+          <div className="bg-[#121214] border border-[#1f1f23] rounded-3xl p-6 space-y-6 self-start" id="cart-summary-sidebar-custom">
             <div className="border-b border-[#1f1f23] pb-4 flex justify-between items-center">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <ShoppingBag size={18} className="text-[#d4af37]" /> Order Summary
@@ -562,7 +882,7 @@ export default function CheckoutPage() {
             ) : (
               <>
                 {/* Scrollable list items summary */}
-                <div className="space-y-4 max-h-[240px] overflow-y-auto pr-1">
+                <div className="space-y-4 max-h-[200px] overflow-y-auto pr-1">
                   {cartItems.map((item) => (
                     <div key={`${item.id}-${item.variant || ''}`} className="flex justify-between items-start text-xs gap-3 font-sans">
                       <div className="space-y-1">
@@ -586,36 +906,51 @@ export default function CheckoutPage() {
                   ))}
                 </div>
 
-                {/* Subtotals */}
+                {/* Subtotals breakdown list matching requirements exactly */}
                 <div className="border-t border-[#1f1f23] pt-4 space-y-3 text-sm">
                   <div className="flex justify-between text-gray-400">
                     <span>Subtotal</span>
                     <span className="font-mono text-white font-bold">${subtotal.toFixed(2)}</span>
                   </div>
+                  {appliedCoupon && (
+                    <div className="flex justify-between text-red-500">
+                      <span>Coupon Discount ({appliedCoupon})</span>
+                      <span className="font-mono font-bold">-${couponDiscountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {isCryptoSelected && (
+                    <div className="flex justify-between text-emerald-400">
+                      <span>Crypto Discount (10%)</span>
+                      <span className="font-mono font-bold">-${cryptoDiscountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-gray-400">
-                    <span>Shipping</span>
-                    <span className="font-mono text-emerald-400 font-bold">FREE</span>
+                    <span>Shipping Fee</span>
+                    <span className="font-mono text-white font-bold">
+                      {shippingMethod ? `$${shippingCost.toFixed(2)}` : <span className="italic text-gray-500 text-xs">Awaiting option</span>}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-white border-t border-[#1f1f23] pt-3">
-                    <span className="font-bold font-sans">Total</span>
-                    <strong className="font-mono text-xl text-[#d4af37]">${subtotal.toFixed(2)}</strong>
+                    <span className="font-bold font-sans">Grand Total</span>
+                    <strong className="font-mono text-xl text-[#d4af37]">${finalTotal.toFixed(2)}</strong>
                   </div>
                 </div>
 
-                {/* Place Order submit hook CTA button */}
+                {/* Action submit button */}
                 <button
                   type="submit"
-                  form="checkout-form"
-                  disabled={isSubmitting || cartItems.length === 0 || !isGatewayEnabled}
+                  form="checkout-form-custom"
+                  disabled={isSubmitting || cartItems.length === 0 || !isReviewedAndConfirmed || (paymentMethod === 'Credit Card' && !isGatewayEnabled)}
                   className="w-full bg-[#d4af37] hover:bg-[#c5a030] text-black py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-[#d4af37]/10 select-none cursor-pointer duration-150"
+                  id="btn-place-order"
                 >
                   {isSubmitting ? (
                     <>
-                      <RefreshCw className="animate-spin w-4 h-4" /> Securing Order...
+                      <RefreshCw className="animate-spin w-4 h-4" /> Securing Order Details...
                     </>
                   ) : (
                     <>
-                      <Lock size={14} /> Submit Order (Mastercard)
+                      <Lock size={14} /> Place Order & Request Details
                     </>
                   )}
                 </button>

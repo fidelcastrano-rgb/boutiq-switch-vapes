@@ -9,7 +9,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     let db: any = null;
     try {
-      const dynamicRequire = require;
+      const dynamicRequire = eval('require');
       const { getRequestContext } = dynamicRequire('@opennext' + 'js/cloudflare');
       const ctx = getRequestContext();
       if (ctx?.env?.DB) {

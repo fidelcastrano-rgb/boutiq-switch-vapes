@@ -14,7 +14,10 @@ import {
   MapPin,
   Clock,
   Printer,
-  AlertCircle
+  AlertCircle,
+  Truck,
+  CreditCard,
+  ShoppingBag
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -30,11 +33,17 @@ interface OrderDetails {
   customer_name: string;
   customer_email: string;
   customer_address: string;
+  customer_country?: string;
   total: number;
   payment_method: string;
   payment_status: string;
-  card_last4: string;
+  card_last4?: string;
   created_at: string;
+  shipping_method?: string;
+  coupon_code?: string;
+  discount_percentage?: number;
+  discount_amount?: number;
+  crypto_discount?: number;
   items: OrderItem[];
 }
 
@@ -50,7 +59,6 @@ function SuccessContent() {
   // Fetch the created order from api
   useEffect(() => {
     if (!orderId) {
-      // Defer loading update to avoid react-hooks/set-state-in-effect issues
       const timeout = setTimeout(() => {
         setLoading(false);
         setError('Missing order ID reference from checkout page query parameters.');
@@ -76,12 +84,10 @@ function SuccessContent() {
       });
   }, [orderId]);
 
-  // Handle high quality invoice print action
   const handlePrintInvoice = () => {
     window.print();
   };
 
-  // Helper to slice ID for short order number displays
   const getShortId = (id: string) => {
     if (!id) return 'N/A';
     return id.substring(0, 8).toUpperCase();
@@ -91,7 +97,7 @@ function SuccessContent() {
     return (
       <div className="flex flex-col items-center gap-3 py-16">
         <RefreshCw className="animate-spin text-[#d4af37] w-10 h-10" />
-        <p className="text-gray-400 font-medium text-sm">Compiling dispatch details and generating invoice...</p>
+        <p className="text-gray-400 font-medium text-sm">Compiling order details and generating invoice...</p>
       </div>
     );
   }
@@ -102,7 +108,7 @@ function SuccessContent() {
         <div className="bg-red-950/20 border border-red-900 rounded-3xl p-6 text-red-400 text-sm">
           <AlertCircle size={32} className="mx-auto text-red-500 mb-2" />
           <p className="font-bold">Order Details Unavailable</p>
-          <p className="text-xs text-gray-450 mt-1">{error || 'Order record is not found in the D1 store.'}</p>
+          <p className="text-xs text-gray-405 mt-1">{error || 'Order record was not found in the D1 store.'}</p>
         </div>
         <Link href="/products" className="inline-flex items-center gap-2 text-sm text-[#d4af37] hover:underline font-bold">
           <ArrowRight className="rotate-180" size={14} /> Back to Catalog
@@ -112,6 +118,18 @@ function SuccessContent() {
   }
 
   const shortId = getShortId(order.id);
+
+  // Recalculants
+  const subtotal = order.items?.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0) || 0;
+  const couponDiscount = Number(order.discount_amount || 0);
+  const cryptoDiscount = Number(order.crypto_discount || 0);
+  
+  // Shipping cost parsing
+  let shippingCost = 20;
+  const methodUpper = (order.shipping_method || 'Normal').toUpperCase();
+  if (methodUpper.includes('OVERNIGHT')) shippingCost = 60;
+  else if (methodUpper.includes('EXPRESS')) shippingCost = 35;
+  else if (methodUpper.includes('NORMAL')) shippingCost = 20;
 
   return (
     <div className="max-w-4xl mx-auto space-y-10 animate-fade-in pb-16 font-sans">
@@ -123,10 +141,36 @@ function SuccessContent() {
         </div>
 
         <div className="space-y-2">
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white font-sans">Order Submitted!</h1>
-          <p className="text-gray-400 text-base max-w-lg mx-auto leading-relaxed">
-            Thank you for shopping with us. Your checkout transaction holds a status of <strong className="text-yellow-400">{order.payment_status}</strong>.
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white font-sans">Order Received!</h1>
+          <p className="text-gray-400 text-sm md:text-base max-w-lg mx-auto leading-relaxed">
+            Thank you for shopping with Boutiq Switch Vapes. Your order is registered in our database.
           </p>
+        </div>
+      </div>
+
+      {/* Payment Instructions Immediate Alert Box */}
+      <div className="bg-[#121214] border border-[#d4af37]/30 p-6 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between" id="payment-warning-card">
+        <div className="space-y-1 text-center md:text-left">
+          <h4 className="text-sm font-bold text-[#d4af37] uppercase tracking-wider flex items-center justify-center md:justify-start gap-1.5 font-mono">
+            ⚠️ Attention check: Payment Process Notice
+          </h4>
+          <p className="text-xs text-gray-300 leading-relaxed max-w-xl">
+            &quot;Your payment instructions have been sent to your email address. Please check your inbox and spam folder.&quot;
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link 
+            href={`/shipping?orderId=${order.id}`}
+            className="bg-[#d4af37] hover:bg-[#c5a030] text-black text-xs font-bold py-2.5 px-5 rounded-xl transition-all shadow shrink-0 text-center"
+          >
+            Track My Order
+          </Link>
+          <Link 
+            href="/products"
+            className="bg-[#18181c] border border-[#27272a] hover:bg-[#121214] text-white text-xs font-bold py-2.5 px-5 rounded-xl transition-all shrink-0 text-center"
+          >
+            Continue Shopping
+          </Link>
         </div>
       </div>
 
@@ -154,11 +198,12 @@ function SuccessContent() {
           </div>
 
           {/* Delivery & Shipping Info */}
-          <div className="grid sm:grid-cols-2 gap-6 text-xs">
+          <div className="grid sm:grid-cols-2 gap-6 text-xs text-gray-300">
             <div>
               <h4 className="text-[10px] uppercase font-bold text-gray-500 tracking-wider mb-2">Billing & Shipping To</h4>
               <p className="font-bold text-white text-sm">{order.customer_name}</p>
               <p className="text-gray-400 mt-1 leading-relaxed max-w-[240px] break-words">{order.customer_address}</p>
+              {order.customer_country && <p className="text-[#d4af37] mt-1 font-bold">Country: {order.customer_country}</p>}
               <p className="text-gray-400 mt-1.5">{order.customer_email}</p>
             </div>
 
@@ -170,18 +215,14 @@ function SuccessContent() {
                   <span className="font-mono text-white">{new Date(order.created_at).toLocaleDateString()}</span>
                 </li>
                 <li className="flex justify-between">
-                  <span>Payment Gateway:</span>
+                  <span>Preauth Type:</span>
                   <span className="text-white font-semibold flex items-center gap-1.5 bg-[#18181c] px-1.5 py-0.5 rounded border border-[#27272a] text-[10px]">
-                    <span className="flex space-x-[-8px]">
-                      <span className="w-3 h-3 rounded-full bg-[#eb001b]"></span>
-                      <span className="w-3 h-3 rounded-full bg-[#ff5f00]"></span>
-                    </span>
                     {order.payment_method}
                   </span>
                 </li>
                 <li className="flex justify-between">
-                  <span>Card Used:</span>
-                  <span className="font-mono text-white">Mastercard (•••• {order.card_last4 || 'N/A'})</span>
+                  <span>Shipping Option:</span>
+                  <span className="text-white font-semibold font-mono">{order.shipping_method || 'Normal'}</span>
                 </li>
               </ul>
             </div>
@@ -204,18 +245,30 @@ function SuccessContent() {
             </div>
           </div>
 
-          {/* Total aggregate summary */}
+          {/* Total aggregate summary matching core user request fields exactly */}
           <div className="border-t border-[#1f1f23] pt-4 flex flex-col items-end text-xs space-y-1.5">
-            <div className="flex justify-between w-48 text-gray-400">
+            <div className="flex justify-between w-54 text-gray-400">
               <span>Subtotal:</span>
-              <span className="font-mono text-white">${order.total.toFixed(2)}</span>
+              <span className="font-mono text-white">${subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between w-48 text-gray-400">
-              <span>Delivery Delivery:</span>
-              <span className="text-emerald-400 font-bold">FREE</span>
+            {couponDiscount > 0 && (
+              <div className="flex justify-between w-54 text-red-500">
+                <span>Coupon Discount ({order.coupon_code || 'WELCOME10'}):</span>
+                <span className="font-mono">-$${couponDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {cryptoDiscount > 0 && (
+              <div className="flex justify-between w-54 text-emerald-450 text-emerald-400">
+                <span>Crypto Discount (10%):</span>
+                <span className="font-mono">-$${cryptoDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between w-54 text-gray-400">
+              <span>Shipping Fee ({order.shipping_method || 'Normal'}):</span>
+              <span className="font-mono text-white">${shippingCost.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between w-48 text-white font-bold border-t border-[#1f1f23] pt-3 text-sm">
-              <span>Total Invoice Amount:</span>
+            <div className="flex justify-between w-54 text-white font-bold border-t border-[#1f1f23] pt-3 text-sm">
+              <span>Final Total:</span>
               <span className="font-mono text-[#d4af37] text-base">${order.total.toFixed(2)}</span>
             </div>
           </div>
@@ -242,13 +295,14 @@ function SuccessContent() {
                 <Mail size={16} className="text-[#d4af37]" /> Sent Notifications
               </h3>
               <p className="text-[11px] text-gray-400 leading-normal mt-1.5">
-                The secure email dispatcher successfully triggered notifications based on the Mastercard checkout rules:
+                The secure email dispatcher successfully triggered notifications based on the checkout selection:
               </p>
             </div>
 
             {/* Simulated Email tab switcher buttons */}
             <div className="flex border-b border-[#1f1f23] p-1 bg-[#18181c] rounded-xl text-[10px] gap-1 font-semibold">
               <button
+                type="button"
                 onClick={() => setActiveTab('instructions')}
                 className={`flex-1 text-center py-2 rounded-lg transition-all ${
                   activeTab === 'instructions' ? 'bg-[#d4af37] text-black font-bold' : 'text-gray-400 hover:text-white'
@@ -257,31 +311,31 @@ function SuccessContent() {
                 Payment Steps
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('confirmation')}
                 className={`flex-1 text-center py-2 rounded-lg transition-all ${
                   activeTab === 'confirmation' ? 'bg-[#d4af37] text-black font-bold' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                Confirmation
+                Receipt
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('admin')}
                 className={`flex-1 text-center py-2 rounded-lg transition-all ${
                   activeTab === 'admin' ? 'bg-[#d4af37] text-black font-bold' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                Admin Notice
+                Admin Alert
               </button>
             </div>
 
             {/* Email dispatch mock viewer panel */}
             <div className="bg-[#18181c] border border-[#27272a] rounded-2xl p-4.5 space-y-3.5 text-xs text-left">
               
-              {/* Header metrics */}
               <div className="border-b border-[#27272a] pb-3 space-y-1.5 text-gray-500 text-[10px] font-mono">
-                <p><span className="text-gray-400 font-sans font-bold">To:</span> {activeTab === 'admin' ? 'admin@boutiqvapes.us' : order.customer_email}</p>
+                <p><span className="text-gray-400 font-sans font-bold">To:</span> {activeTab === 'admin' ? 'yamahaoutboardss@gmail.com' : order.customer_email}</p>
                 
-                {/* Dynamically match the requested email formatting */}
                 {activeTab === 'instructions' && (
                   <p><span className="text-gray-400 font-sans font-bold">Subject:</span> <span className="text-white font-mono">Payment Instructions for Order #{shortId}</span></p>
                 )}
@@ -289,66 +343,56 @@ function SuccessContent() {
                   <p><span className="text-gray-400 font-sans font-bold">Subject:</span> <span className="text-white font-mono">Order Confirmation for Order #{shortId}</span></p>
                 )}
                 {activeTab === 'admin' && (
-                  <p><span className="text-gray-400 font-sans font-bold">Subject:</span> <span className="text-white font-mono">Admin Notification: New Mastercard Order #{shortId}</span></p>
+                  <p><span className="text-gray-400 font-sans font-bold">Subject:</span> <span className="text-white font-mono">[NEW BOOKING ALERT] Order #{shortId} list info</span></p>
                 )}
 
-                <p><span className="text-gray-400 font-sans font-bold">Header Status:</span> <span className="text-emerald-400">DISPATCHED SECURELY</span></p>
+                <p><span className="text-gray-400 font-sans font-bold">Delivery Status:</span> <span className="text-emerald-400 font-bold">DELIVERED WITH INVOICE.PDF</span></p>
               </div>
 
               {/* Message bodies matching exact prompt directives */}
               <div className="text-gray-300 text-xs leading-relaxed font-sans space-y-2 select-all">
                 {activeTab === 'instructions' && (
-                  <p>
-                    &quot;Thank you for your order. Mastercard payment instructions have been sent for Order #{shortId}. Please follow the instructions provided to complete payment. Your order will remain in Pending Payment status until payment has been successfully received and verified.&quot;
-                  </p>
+                  <div className="space-y-2">
+                    <p className="font-bold text-white">Payment Method: {order.payment_method}</p>
+                    <p>Amount Due: <strong className="text-[#d4af37] font-mono">${order.total.toFixed(2)}</strong></p>
+                    <p className="border-l-2 border-[#d4af37] pl-2 text-[11px] text-gray-400 italic">
+                      Payment instructions have been mailed to your email address, including wallet detail, Apple Cash emails, or credit holds. Please settle within the 48-hour deadline.
+                    </p>
+                  </div>
                 )}
 
                 {activeTab === 'confirmation' && (
                   <div className="space-y-2">
-                    <p>Dear {order.customer_name},</p>
+                    <p>Hello {order.customer_name},</p>
                     <p>
-                      This email confirms receipt of Order #{shortId}. Your payment method was registered as <strong className="text-white font-mono">Mastercard</strong> (Ending in •••• {order.card_last4}).
+                      Your order #{shortId} has been successfully submitted!
                     </p>
                     <p>
-                      Under the active Mastercard guidelines, your transaction details are held in verification status: <strong className="text-yellow-400">{order.payment_status}</strong>.
+                      Shipping Selected: <strong className="text-white">{order.shipping_method || 'Normal'}</strong> (Est. ${shippingCost})
+                    </p>
+                    <p>
+                      Grand Total Charged: <strong className="text-[#d4af37] font-mono">${order.total.toFixed(2)}</strong>
                     </p>
                   </div>
                 )}
 
                 {activeTab === 'admin' && (
                   <div className="space-y-2">
-                    <p>Administrator,</p>
+                    <p>Administrator Notice,</p>
                     <p>
-                      A new order #{shortId} has been submitted on the check out system with <strong className="text-white">Mastercard</strong>.
+                      Order #{shortId} placed by {order.customer_name} ({order.customer_email}) under Country: {order.customer_country || 'United States'}.
                     </p>
                     <p>
-                      Details: Customer {order.customer_name} ({order.customer_email}), Address: {order.customer_address}. Total Sales Volume: ${order.total.toFixed(2)}.
+                      Logistics Method: {order.shipping_method || 'Normal'}, Payment Option: {order.payment_method}.
                     </p>
                     <p>
-                      Action Required: Verify the receipt of funds and log into the admin dashboard area to process status updates.
+                      Sales Volume: ${order.total.toFixed(2)}. Verify cleared deposits to flag active processing.
                     </p>
                   </div>
                 )}
               </div>
 
             </div>
-          </div>
-
-          {/* Quick link buttons to admin dashboard & shop */}
-          <div className="space-y-3 pt-2">
-            <Link 
-              href="/admin" 
-              className="w-full bg-[#18181c] hover:bg-[#1f1f24] text-[#d4af37] border border-[#27272a] py-3.5 px-4 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow"
-            >
-              Access Admin Dashboard <ChevronRight size={14} />
-            </Link>
-            
-            <Link 
-              href="/products" 
-              className="w-full bg-[#d4af37] hover:bg-[#c5a030] text-black py-4 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-[#d4af37]/15"
-            >
-              Back to Catalog <ArrowRight size={15} />
-            </Link>
           </div>
         </div>
 

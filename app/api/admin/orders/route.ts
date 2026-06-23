@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendPaymentInstructions } from '@/lib/email';
+import { deliverAllCheckoutAutomation } from '@/lib/email';
 
 // Initialize global tracking structures for sandbox container fallbacks
 if (!(globalThis as any).__inMemoryOrdersStore) {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     let db: any = null;
 
     try {
-      const dynamicRequire = require;
+      const dynamicRequire = eval('require');
       const { getRequestContext } = dynamicRequire('@opennext' + 'js/cloudflare');
       const ctx = getRequestContext();
       if (ctx?.env?.DB) {
@@ -55,11 +55,31 @@ export async function GET(req: NextRequest) {
       mastercardEnabled = (globalThis as any).__inMemoryAdminSettings['mastercard_payments_enabled'] === 'true';
     }
 
+    // Retrieve email logs from global store or database
+    let emailDispatches: any[] = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const logsResult = await db.prepare("SELECT * FROM email_logs ORDER BY timestamp DESC").all();
+        emailDispatches = logsResult.results?.map((r: any) => ({
+          id: r.id,
+          orderId: r.order_id,
+          customerEmail: r.customer_email,
+          timestamp: r.timestamp,
+          subject: r.subject
+        })) || [];
+      } catch (e) {
+        console.warn('Could not read email_logs table, using in-memory backup logs:', e);
+        emailDispatches = (globalThis as any).__inMemoryEmailDispatchLogs || [];
+      }
+    } else {
+      emailDispatches = (globalThis as any).__inMemoryEmailDispatchLogs || [];
+    }
+
     return NextResponse.json({
       success: true,
       orders,
       mastercard_payments_enabled: mastercardEnabled,
-      email_dispatches: (globalThis as any).__inMemoryEmailDispatchLogs || []
+      email_dispatches: emailDispatches
     });
 
   } catch (err: any) {
@@ -74,7 +94,7 @@ export async function POST(req: NextRequest) {
 
     let db: any = null;
     try {
-      const dynamicRequire = require;
+      const dynamicRequire = eval('require');
       const { getRequestContext } = dynamicRequire('@opennext' + 'js/cloudflare');
       const ctx = getRequestContext();
       if (ctx?.env?.DB) {
@@ -154,19 +174,37 @@ export async function POST(req: NextRequest) {
         parsedItems = [];
       }
 
-      // Automatically dispatch live email via Resend if environment configuration keys are set
-      const dispatchLog = await sendPaymentInstructions({
-        to: order.customer_email || 'customer@example.com',
-        orderId,
-        customerName: order.customer_name || 'Valued Customer',
-        items: parsedItems || [],
-        total: order.total || 0,
-      });
+      // Re-trigger the rich unified deliverAllCheckoutAutomation
+      const compiledOrder = {
+        id: order.id,
+        items: parsedItems,
+        total: order.total,
+        customer_name: order.customer_name,
+        customer_email: order.customer_email,
+        customer_address: order.customer_address,
+        customer_country: order.customer_country || 'United States',
+        payment_method: order.payment_method,
+        shipping_method: order.shipping_method || 'Normal',
+        coupon_code: order.coupon_code || null,
+        discount_percentage: order.discount_percentage || 0,
+        discount_amount: order.discount_amount || 0,
+        crypto_discount: order.crypto_discount || 0,
+        created_at: order.created_at
+      };
 
+      const dispatchLog = await deliverAllCheckoutAutomation(compiledOrder, db);
+
+      // Return log payload back
       return NextResponse.json({
         success: true,
         message: `Mastercard payment instruction email resubmitted for Order #${orderId.substring(0, 8)}.`,
-        dispatch: dispatchLog
+        dispatch: {
+          id: dispatchLog.dispatchId,
+          orderId: order.id,
+          customerEmail: order.customer_email,
+          timestamp: dispatchLog.timestamp,
+          subject: dispatchLog.subject
+        }
       });
     }
 
